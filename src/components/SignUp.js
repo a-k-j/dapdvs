@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 // const ethers = require("ethers")
 
-const CONTRACT_ADDRESS = '0xe133D872fdF7B5cCE30Af887080bC82Fec493cb5';
+const CONTRACT_ADDRESS = '0x3684bd4F57C08C820fAf92DC5171F878245471F3';
 
 const SignUp = ({ onSignUp }) => {
   const [role, setRole] = useState('');

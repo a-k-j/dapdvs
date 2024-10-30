@@ -9,7 +9,6 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         address payable pgOwner;
         address payable renter;
         uint256 depositAmount;
-        bytes32 contentHash;  // Hash of off-chain stored data
         uint256 startDate;
         uint256 endDate;
         bool isActive;
@@ -22,35 +21,38 @@ contract DAPDVS is ReentrancyGuard, Ownable {
     uint256 public nextContractId;
 
     mapping(address => bool) public registeredValidators;
+    mapping(address => uint256[]) private userContracts;
+    mapping(address => uint256[]) private validatorContracts;
 
-    event ContractCreated(uint256 indexed contractId, address pgOwner, address renter, bytes32 contentHash);
+    event ContractCreated(uint256 indexed contractId, address pgOwner, address renter);
     event ContractSigned(uint256 indexed contractId);
     event ValidatorRequested(uint256 indexed contractId, address validator);
     event ContractCompleted(uint256 indexed contractId, uint256 renterRefund, uint256 ownerPayment);
     event ValidatorRegistered(address validator);
     event ValidatorUnregistered(address validator);
+    event ContractAutoCompleted(uint256 indexed contractId);
 
     constructor() Ownable(msg.sender) {
         nextContractId = 1;
     }
 
-
     function createContract(
         address payable _renter,
         uint256 _depositAmount,
-        bytes32 _contentHash,
         uint256 _duration
     ) external {
         RentalContract storage newContract = rentalContracts[nextContractId];
         newContract.pgOwner = payable(msg.sender);
         newContract.renter = _renter;
         newContract.depositAmount = _depositAmount;
-        newContract.contentHash = _contentHash;
         newContract.isActive = false;
         newContract.validatorRequested = false;
         newContract.endDate = block.timestamp + _duration;
 
-        emit ContractCreated(nextContractId, msg.sender, _renter, _contentHash);
+        userContracts[msg.sender].push(nextContractId);
+        userContracts[_renter].push(nextContractId);
+
+        emit ContractCreated(nextContractId, msg.sender, _renter);
         nextContractId++;
     }
 
@@ -73,14 +75,18 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         require(!rentalContract.validatorRequested, "Validator already requested");
         require(registeredValidators[_validator], "Validator is not registered");
         require(block.timestamp <= rentalContract.endDate, "Contract has ended");
+        
+        require(_validator != rentalContract.pgOwner && _validator != rentalContract.renter, 
+                "Validator cannot be part of the contract");
 
         rentalContract.validatorRequested = true;
         rentalContract.validator = _validator;
+        validatorContracts[_validator].push(_contractId);
 
         emit ValidatorRequested(_contractId, _validator);
     }
 
-    function completeContract(uint256 _contractId, uint256 _damageAmount, bytes32 _newContentHash) external nonReentrant {
+    function completeContract(uint256 _contractId, uint256 _damageAmount) external nonReentrant {
         RentalContract storage rentalContract = rentalContracts[_contractId];
         require(msg.sender == rentalContract.validator, "Only the assigned validator can complete the contract");
         require(rentalContract.isActive, "Contract is not active");
@@ -93,12 +99,28 @@ contract DAPDVS is ReentrancyGuard, Ownable {
 
         rentalContract.isActive = false;
         rentalContract.isCompleted = true;
-        rentalContract.contentHash = _newContentHash;
 
         emit ContractCompleted(_contractId, renterRefund, _damageAmount);
     }
 
-    function autoCompleteContract(uint256 _contractId) external nonReentrant {
+    function checkAndCompleteExpiredContract(uint256 _contractId) public {
+        RentalContract storage rentalContract = rentalContracts[_contractId];
+        if (rentalContract.isActive && 
+            !rentalContract.isCompleted && 
+            block.timestamp > rentalContract.endDate) {
+            
+            if (rentalContract.validatorRequested) {
+                rentalContract.renter.transfer(rentalContract.depositAmount);
+                rentalContract.isActive = false;
+                rentalContract.isCompleted = true;
+                emit ContractAutoCompleted(_contractId);
+            } else {
+                autoCompleteContract(_contractId);
+            }
+        }
+    }
+
+    function autoCompleteContract(uint256 _contractId) public nonReentrant {
         RentalContract storage rentalContract = rentalContracts[_contractId];
         require(rentalContract.isActive, "Contract is not active");
         require(!rentalContract.isCompleted, "Contract already completed");
@@ -106,11 +128,86 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         require(block.timestamp > rentalContract.endDate, "Contract has not ended yet");
 
         rentalContract.renter.transfer(rentalContract.depositAmount);
-
         rentalContract.isActive = false;
         rentalContract.isCompleted = true;
 
         emit ContractCompleted(_contractId, rentalContract.depositAmount, 0);
+    }
+
+    function getUserContracts(address _user) external view returns (
+        RentalContract[] memory activeContracts,
+        RentalContract[] memory completedContracts
+    ) {
+        uint256[] memory userContractIds = userContracts[_user];
+        
+        uint256 activeCount = 0;
+        uint256 completedCount = 0;
+        
+        for (uint256 i = 0; i < userContractIds.length; i++) {
+            if (rentalContracts[userContractIds[i]].isCompleted) {
+                completedCount++;
+            } else {
+                activeCount++;
+            }
+        }
+        
+        activeContracts = new RentalContract[](activeCount);
+        completedContracts = new RentalContract[](completedCount);
+        
+        uint256 activeIndex = 0;
+        uint256 completedIndex = 0;
+        
+        for (uint256 i = 0; i < userContractIds.length; i++) {
+            RentalContract storage currentContract = rentalContracts[userContractIds[i]];
+            if (currentContract.isCompleted) {
+                completedContracts[completedIndex] = currentContract;
+                completedIndex++;
+            } else {
+                activeContracts[activeIndex] = currentContract;
+                activeIndex++;
+            }
+        }
+        
+        return (activeContracts, completedContracts);
+    }
+
+    function getValidatorContracts(address _validator) external view returns (
+        RentalContract[] memory activeContracts,
+        RentalContract[] memory completedContracts
+    ) {
+        require(registeredValidators[_validator], "Not a registered validator");
+        
+        uint256[] memory validatorContractIds = validatorContracts[_validator];
+        
+        uint256 activeCount = 0;
+        uint256 completedCount = 0;
+        
+        for (uint256 i = 0; i < validatorContractIds.length; i++) {
+            if (rentalContracts[validatorContractIds[i]].isCompleted) {
+                completedCount++;
+            } else {
+                activeCount++;
+            }
+        }
+        
+        activeContracts = new RentalContract[](activeCount);
+        completedContracts = new RentalContract[](completedCount);
+        
+        uint256 activeIndex = 0;
+        uint256 completedIndex = 0;
+        
+        for (uint256 i = 0; i < validatorContractIds.length; i++) {
+            RentalContract storage currentContract = rentalContracts[validatorContractIds[i]];
+            if (currentContract.isCompleted) {
+                completedContracts[completedIndex] = currentContract;
+                completedIndex++;
+            } else {
+                activeContracts[activeIndex] = currentContract;
+                activeIndex++;
+            }
+        }
+        
+        return (activeContracts, completedContracts);
     }
 
     function registerValidator(address _validator) external onlyOwner {
@@ -125,18 +222,10 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         emit ValidatorUnregistered(_validator);
     }
 
-    function updateContractHash(uint256 _contractId, bytes32 _newContentHash) external {
-        RentalContract storage rentalContract = rentalContracts[_contractId];
-        require(msg.sender == rentalContract.pgOwner || msg.sender == rentalContract.renter, "Unauthorized");
-        require(rentalContract.isActive, "Contract is not active");
-        rentalContract.contentHash = _newContentHash;
-    }
-
     function getContractDetails(uint256 _contractId) external view returns (
         address pgOwner,
         address renter,
         uint256 depositAmount,
-        bytes32 contentHash,
         uint256 startDate,
         uint256 endDate,
         bool isActive,
@@ -149,7 +238,6 @@ contract DAPDVS is ReentrancyGuard, Ownable {
             rentalContract.pgOwner,
             rentalContract.renter,
             rentalContract.depositAmount,
-            rentalContract.contentHash,
             rentalContract.startDate,
             rentalContract.endDate,
             rentalContract.isActive,

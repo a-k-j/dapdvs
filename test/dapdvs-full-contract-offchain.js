@@ -16,10 +16,9 @@ describe("DAPDVS", function () {
 
     // Create a contract before each test
     const depositAmount = ethers.parseEther("1");
-    const contentHash = ethers.keccak256(ethers.toUtf8Bytes("Initial contract details"));
     const duration = 30 * 24 * 60 * 60; // 30 days
 
-    await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, contentHash, duration);
+    await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration);
     contractId = 1;
 
     // Sign the contract
@@ -29,12 +28,11 @@ describe("DAPDVS", function () {
   describe("Contract Creation and Signing", function () {
     it("Should create a rental contract", async function () {
       const depositAmount = ethers.parseEther("1");
-      const contentHash = ethers.keccak256(ethers.toUtf8Bytes("New contract details"));
       const duration = 30 * 24 * 60 * 60; // 30 days
 
-      await expect(dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, contentHash, duration))
+      await expect(dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration))
         .to.emit(dapdvs, "ContractCreated")
-        .withArgs(2, pgOwner.address, renter.address, contentHash);
+        .withArgs(2, pgOwner.address, renter.address);
     });
 
     it("Should allow renter to sign the contract", async function () {
@@ -42,9 +40,8 @@ describe("DAPDVS", function () {
       const newContractId = 2;
 
       // Create a new contract for this test
-      const contentHash = ethers.keccak256(ethers.toUtf8Bytes("New contract details"));
       const duration = 30 * 24 * 60 * 60; // 30 days
-      await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, contentHash, duration);
+      await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration);
 
       await expect(dapdvs.connect(renter).signContract(newContractId, { value: depositAmount }))
         .to.emit(dapdvs, "ContractSigned")
@@ -66,19 +63,31 @@ describe("DAPDVS", function () {
       expect(contract.validator).to.equal(validator.address);
     });
 
+    it("Should not allow contract participant to be validator", async function () {
+      // Try to request PG owner as validator
+      await dapdvs.registerValidator(pgOwner.address);
+      await expect(
+        dapdvs.connect(pgOwner).requestValidator(contractId, pgOwner.address)
+      ).to.be.revertedWith("Validator cannot be part of the contract");
+
+      // Try to request renter as validator
+      await dapdvs.registerValidator(renter.address);
+      await expect(
+        dapdvs.connect(pgOwner).requestValidator(contractId, renter.address)
+      ).to.be.revertedWith("Validator cannot be part of the contract");
+    });
+
     it("Should allow validator to complete the contract", async function () {
       await dapdvs.connect(pgOwner).requestValidator(contractId, validator.address);
 
       const damageAmount = ethers.parseEther("0.5");
-      const newContentHash = ethers.keccak256(ethers.toUtf8Bytes("Updated contract details"));
 
-      await expect(dapdvs.connect(validator).completeContract(contractId, damageAmount, newContentHash))
+      await expect(dapdvs.connect(validator).completeContract(contractId, damageAmount))
         .to.emit(dapdvs, "ContractCompleted");
 
       const contract = await dapdvs.rentalContracts(contractId);
       expect(contract.isActive).to.be.false;
       expect(contract.isCompleted).to.be.true;
-      expect(contract.contentHash).to.equal(newContentHash);
     });
   });
 
@@ -94,6 +103,70 @@ describe("DAPDVS", function () {
       const contract = await dapdvs.rentalContracts(contractId);
       expect(contract.isActive).to.be.false;
       expect(contract.isCompleted).to.be.true;
+    });
+
+    it("Should auto-complete contract with validator after end date", async function () {
+      await dapdvs.connect(pgOwner).requestValidator(contractId, validator.address);
+
+      // Fast-forward time
+      await ethers.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]); // 31 days
+      await ethers.provider.send("evm_mine");
+
+      await expect(dapdvs.connect(addr1).checkAndCompleteExpiredContract(contractId))
+        .to.emit(dapdvs, "ContractAutoCompleted");
+
+      const contract = await dapdvs.rentalContracts(contractId);
+      expect(contract.isActive).to.be.false;
+      expect(contract.isCompleted).to.be.true;
+    });
+  });
+
+  describe("Contract Retrieval Functions", function () {
+    beforeEach(async function () {
+      // Create additional contracts for testing retrieval
+      const depositAmount = ethers.parseEther("1");
+      const duration = 30 * 24 * 60 * 60;
+
+      // Create another contract with same PG owner
+      await dapdvs.connect(pgOwner).createContract(addr1.address, depositAmount, duration);
+      await dapdvs.connect(addr1).signContract(2, { value: depositAmount });
+
+      // Create a contract and complete it
+      await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration);
+      await dapdvs.connect(renter).signContract(3, { value: depositAmount });
+      await dapdvs.connect(pgOwner).requestValidator(3, validator.address);
+      await dapdvs.connect(validator).completeContract(3, 0);
+    });
+
+    it("Should retrieve all user contracts correctly", async function () {
+      const [activeContracts, completedContracts] = await dapdvs.getUserContracts(pgOwner.address);
+      
+      expect(activeContracts.length).to.equal(2); // Contracts 1 and 2
+      expect(completedContracts.length).to.equal(1); // Contract 3
+
+      // Verify active contracts
+      expect(activeContracts[0].renter).to.equal(renter.address);
+      expect(activeContracts[1].renter).to.equal(addr1.address);
+
+      // Verify completed contracts
+      expect(completedContracts[0].isCompleted).to.be.true;
+    });
+
+    it("Should retrieve all validator contracts correctly", async function () {
+      const [activeContracts, completedContracts] = await dapdvs.getValidatorContracts(validator.address);
+      
+      expect(activeContracts.length).to.equal(0);
+      expect(completedContracts.length).to.equal(1);
+
+      // Verify completed validator contracts
+      expect(completedContracts[0].isCompleted).to.be.true;
+      expect(completedContracts[0].validator).to.equal(validator.address);
+    });
+
+    it("Should not allow unregistered validator to fetch contracts", async function () {
+      await expect(
+        dapdvs.getValidatorContracts(addr1.address)
+      ).to.be.revertedWith("Not a registered validator");
     });
   });
 
@@ -113,34 +186,15 @@ describe("DAPDVS", function () {
     });
   });
 
-  describe("Contract Hash Update", function () {
-    it("Should allow PG owner or renter to update contract hash", async function () {
-      const newContentHash = ethers.keccak256(ethers.toUtf8Bytes("Updated off-chain data"));
-
-      await expect(dapdvs.connect(pgOwner).updateContractHash(contractId, newContentHash))
-        .to.not.be.reverted;
-
-      let contract = await dapdvs.rentalContracts(contractId);
-      expect(contract.contentHash).to.equal(newContentHash);
-
-      const newerContentHash = ethers.keccak256(ethers.toUtf8Bytes("Newer off-chain data"));
-
-      await expect(dapdvs.connect(renter).updateContractHash(contractId, newerContentHash))
-        .to.not.be.reverted;
-
-      contract = await dapdvs.rentalContracts(contractId);
-      expect(contract.contentHash).to.equal(newerContentHash);
-    });
-  });
-
   describe("Contract Details Retrieval", function () {
     it("Should return correct contract details", async function () {
       const details = await dapdvs.getContractDetails(contractId);
 
       expect(details.pgOwner).to.equal(pgOwner.address);
       expect(details.renter).to.equal(renter.address);
-      expect(details.isActive).to.be.true; // Contract is now signed in beforeEach
-      // Add more assertions for other contract details
+      expect(details.isActive).to.be.true;
+      expect(details.validatorRequested).to.be.false;
+      expect(details.isCompleted).to.be.false;
     });
   });
 });

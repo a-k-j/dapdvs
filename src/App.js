@@ -1,340 +1,454 @@
-// // // src/App.js
-// // import PGOwnerDashboard from './components/PGOwnerDashboard';
-// // import RenterDashboard from './components/RenterDashboard';
-// // import ValidatorDashboard from './components/ValidatorDashboard';
-// // import ContractABI from './ContractABI.json';
-// // import React, { useState, useEffect } from 'react';
-// // const { ethers } = require("hardhat");
+import React, { useState, useEffect } from 'react';
+import DAPDVS_ABI from './ContractABI.json';
+const ethers = require("ethers");
+const DAPDVS_ADDRESS = '0xb13b93881dA1f59cfe1390e5c03f669a5260B649';
 
-// // const CONTRACT_ADDRESS = '0xe133D872fdF7B5cCE30Af887080bC82Fec493cb5';
+const RentalPlatform = () => {
+  const [currentAccount, setCurrentAccount] = useState(null);
+  const [isRenter, setIsRenter] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [activeContracts, setActiveContracts] = useState([]);
+  const [allContracts, setAllContracts] = useState([]);
+  const [error, setError] = useState(null);
+  const [depositAmount, setDepositAmount] = useState(0);
+  const [contractDuration, setContractDuration] = useState(0);
+  const [renterAddress, setRenterAddress] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [contract, setContract] = useState(null);
+  const [provider, setProvider] = useState(null);
+  const [signer, setSigner] = useState(null);
 
-// // function App() {
-// //   const [account, setAccount] = useState(null);
-// //   const [contract, setContract] = useState(null);
-// //   const [userRole, setUserRole] = useState(null);
+  useEffect(() => {
+    checkIfWalletIsConnected();
+  }, []);
 
-// //   useEffect(() => {
-// //     const init = async () => {
-// //       if (typeof window.ethereum !== 'undefined') {
-// //         try {
-// //           // Request account access
-// //           await window.ethereum.request({ method: 'eth_requestAccounts' });
-// //           const provider = new ethers.providers.Web3Provider(window.ethereum);
-// //           const signer = provider.getSigner();
-// //           const address = await signer.getAddress();
-// //           setAccount(address);
+  useEffect(() => {
+    if (window.ethereum) {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      setProvider(provider);
+      const signer = provider.getSigner();
+      setSigner(signer);
+      const contractInstance = new ethers.Contract(DAPDVS_ADDRESS, DAPDVS_ABI, signer);
+      setContract(contractInstance);
+    }
+  }, [currentAccount]);
 
-// //           const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, ContractABI, signer);
-// //           setContract(contractInstance);
-
-// //           // Determine user role (this is a simplified example, you might need a more complex logic)
-// //           const isValidator = await contractInstance.registeredValidators(address);
-// //           if (isValidator) {
-// //             setUserRole('validator');
-// //           } else {
-// //             // For simplicity, we're assuming non-validators are either PG Owners or Renters
-// //             // You might need to implement a more sophisticated role determination logic
-// //             setUserRole('pgowner'); // or 'renter'
-// //           }
-// //         } catch (error) {
-// //           console.error('Failed to connect to MetaMask', error);
-// //         }
-// //       } else {
-// //         console.log('Please install MetaMask!');
-// //       }
-// //     };
-
-// //     init();
-// //   }, []);
-
-// //   if (!account) {
-// //     return <div>Please connect your MetaMask wallet.</div>;
-// //   }
-
-// //   return (
-// //     <div className="App">
-// //       <h1>DAPDVS Dashboard</h1>
-// //       <p>Connected Account: {account}</p>
-// //       {userRole === 'pgowner' && <PGOwnerDashboard contract={contract} account={account} />}
-// //       {userRole === 'renter' && <RenterDashboard contract={contract} account={account} />}
-// //       {userRole === 'validator' && <ValidatorDashboard contract={contract} account={account} />}
-// //     </div>
-// //   );
-// // }
-
-// // export default App;
-
-
-// // import React, { useState, useEffect } from 'react';
-// // import RenterDashboard from './components/RenterDashboard';
-
-
-// // const HomePage = () => {
-// //   const [isLoggedIn, setIsLoggedIn] = useState(false);
-// //   const [account, setAccount] = useState(null);
-// //   const [error, setError] = useState(null);
-
-// //   useEffect(() => {
-// //     checkIfWalletIsConnected();
-// //   }, []);
-
-// //   const checkIfWalletIsConnected = async () => {
-// //     try {
-// //       if (window.ethereum) {
-// //         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-// //         if (accounts.length > 0) {
-// //           setAccount(accounts[0]);
-// //           setIsLoggedIn(true);
-// //         }
-// //       } else {
-// //         setError('Please install MetaMask to use this application.');
-// //       }
-// //     } catch (error) {
-// //       console.error('Error checking wallet connection:', error);
-// //       setError('An error occurred while checking your wallet connection.');
-// //     }
-// //   };
-
-// //   const handleLogin = async () => {
-// //     try {
-// //       if (window.ethereum) {
-// //         await window.ethereum.request({ method: 'eth_requestAccounts' });
-// //         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-// //         setAccount(accounts[0]);
-// //         setIsLoggedIn(true);
-// //         setError(null);
-// //       } else {
-// //         setError('Please install MetaMask to use this application.');
-// //       }
-// //     } catch (error) {
-// //       console.error('Error connecting to MetaMask:', error);
-// //       setError('An error occurred while connecting to MetaMask.');
-// //     }
-// //   };
-
-// //   const handleRoleSelect = (role) => {
-// //     // In a real application, you would redirect to the appropriate dashboard here
-// //     console.log(`Entering dashboard as ${role} with account ${account}`);
-// //   };
-
-// //   const buttonStyle = {
-// //     padding: '10px 20px',
-// //     fontSize: '16px',
-// //     cursor: 'pointer',
-// //     backgroundColor: '#4CAF50',
-// //     color: 'white',
-// //     border: 'none',
-// //     borderRadius: '5px',
-// //     marginBottom: '10px',
-// //     width: '100%',
-// //   };
-
-// //   const cardStyle = {
-// //     width: '300px',
-// //     padding: '20px',
-// //     boxShadow: '0 4px 8px 0 rgba(0,0,0,0.2)',
-// //     borderRadius: '5px',
-// //     backgroundColor: 'white',
-// //   };
-
-// //   if (!isLoggedIn) {
-// //     return (
-// //       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f0f0f0' }}>
-// //         <div style={cardStyle}>
-// //           <h2 style={{ textAlign: 'center' }}>Welcome to DAPDVS</h2>
-// //           <p style={{ textAlign: 'center', marginBottom: '20px' }}>Decentralized Apartment PG Digital Verification System</p>
-// //           <button onClick={handleLogin} style={buttonStyle}>
-// //             Connect with MetaMask
-// //           </button>
-// //           {error && (
-// //             <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>
-// //           )}
-// //         </div>
-// //       </div>
-// //     );
-// //   }
-
-// //   return (
-// //     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f0f0f0' }}>
-// //       <div style={cardStyle}>
-// //         <h2 style={{ textAlign: 'center' }}>Choose Your Role</h2>
-// //         <p style={{ textAlign: 'center', marginBottom: '20px' }}>Select how you want to enter the dashboard</p>
-// //         <button onClick={() => handleRoleSelect('renter')} style={buttonStyle}>
-// //           Enter as Renter
-// //         </button>
-// //         <button onClick={() => handleRoleSelect('pgOwner')} style={buttonStyle}>
-// //           Enter as PG Owner
-// //         </button>
-// //         <button onClick={() => handleRoleSelect('validator')} style={buttonStyle}>
-// //           Enter as Validator
-// //         </button>
-// //         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '14px', color: '#666' }}>
-// //           Connected: {account && `${account.slice(0, 6)}...${account.slice(-4)}`}
-// //         </p>
-// //       </div>
-// //     </div>
-// //   );
-// // };
-
-// // export default HomePage;
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import React, { useState, useEffect } from 'react';
-// import { BrowserRouter as Router, Route, Routes, Link, Navigate } from 'react-router-dom';
-// import RenterDashboard from './components/RenterDashboard';
-
-// const CONTRACT_ADDRESS = '0xe133D872fdF7B5cCE30Af887080bC82Fec493cb5';
-
-// function App() {
-//   const [isLoggedIn, setIsLoggedIn] = useState(false);
-//   const [account, setAccount] = useState(null);
-//   const [error, setError] = useState(null);
-
-//   useEffect(() => {
-//     checkIfWalletIsConnected();
-//   }, []);
-
-//   const checkIfWalletIsConnected = async () => {
-//     try {
-//       if (window.ethereum) {
-//         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-//         if (accounts.length > 0) {
-//           setAccount(accounts[0]);
-//           setIsLoggedIn(true);
-//         }
-//       } else {
-//         setError('Please install MetaMask to use this application.');
-//       }
-//     } catch (error) {
-//       console.error('Error checking wallet connection:', error);
-//       setError('An error occurred while checking your wallet connection.');
-//     }
-//   };
-
-//   const handleLogin = async () => {
-//     try {
-//       if (window.ethereum) {
-//         await window.ethereum.request({ method: 'eth_requestAccounts' });
-//         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-//         setAccount(accounts[0]);
-//         setIsLoggedIn(true);
-//         setError(null);
-//       } else {
-//         setError('Please install MetaMask to use this application.');
-//       }
-//     } catch (error) {
-//       console.error('Error connecting to MetaMask:', error);
-//       setError('An error occurred while connecting to MetaMask.');
-//     }
-//   };
-
-//   const buttonStyle = {
-//     padding: '10px 20px',
-//     fontSize: '16px',
-//     cursor: 'pointer',
-//     backgroundColor: '#4CAF50',
-//     color: 'white',
-//     border: 'none',
-//     borderRadius: '5px',
-//     marginBottom: '10px',
-//     width: '100%',
-//   };
-
-//   const cardStyle = {
-//     width: '300px',
-//     padding: '20px',
-//     boxShadow: '0 4px 8px 0 rgba(0,0,0,0.2)',
-//     borderRadius: '5px',
-//     backgroundColor: 'white',
-//   };
-
-//   const HomePage = () => (
-//     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f0f0f0' }}>
-//       <div style={cardStyle}>
-//         <h2 style={{ textAlign: 'center' }}>Choose Your Role</h2>
-//         <p style={{ textAlign: 'center', marginBottom: '20px' }}>Select how you want to enter the dashboard</p>
-//         <Link to="/renter" style={{ textDecoration: 'none' }}>
-//           <button style={buttonStyle}>Enter as Renter</button>
-//         </Link>
-//         <button style={buttonStyle} disabled>Enter as PG Owner</button>
-//         <button style={buttonStyle} disabled>Enter as Validator</button>
-//         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '14px', color: '#666' }}>
-//           Connected: {account && `${account.slice(0, 6)}...${account.slice(-4)}`}
-//         </p>
-//       </div>
-//     </div>
-//   );
-
-//   if (!isLoggedIn) {
-//     return (
-//       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f0f0f0' }}>
-//         <div style={cardStyle}>
-//           <h2 style={{ textAlign: 'center' }}>Welcome to DAPDVS</h2>
-//           <p style={{ textAlign: 'center', marginBottom: '20px' }}>Decentralized Apartment PG Digital Verification System</p>
-//           <button onClick={handleLogin} style={buttonStyle}>
-//             Connect with MetaMask
-//           </button>
-//           {error && (
-//             <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>
-//           )}
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   return (
-//     <Router>
-//       <Routes>
-//         <Route path="/" element={<HomePage />} />
-//         <Route 
-//           path="/renter" 
-//           element={
-//             isLoggedIn ? 
-//             <RenterDashboard account={account} contractAddress={CONTRACT_ADDRESS} /> : 
-//             <Navigate to="/" replace />
-//           } 
-//         />
-//         {/* Add more routes for PG Owner and Validator dashboards when they're ready */}
-//       </Routes>
-//     </Router>
-//   );
-// }
-
-// export default App;
-
-import React from 'react';
-import SignUp from './components/SignUp';
-
-const App = () => {
-  // In your App component
-  const handleSignUp = (role, address) => {
-    // Here you would typically interact with your smart contract
-    // to register the user with their selected role and address
-    console.log(`User signed up as ${role} with address ${address}`);
-    // Update app state, redirect to dashboard, etc.
+  const checkIfWalletIsConnected = async () => {
+    try {
+      if (window.ethereum) {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+          setCurrentAccount(accounts[0]);
+          setIsLoggedIn(true);
+          await fetchUserContracts(accounts[0]);
+        }
+      } else {
+        setError('Please install MetaMask to use this application.');
+      }
+    } catch (error) {
+      console.error('Error checking wallet connection:', error);
+      setError('An error occurred while checking your wallet connection.');
+    }
   };
 
-  // // In your JSX
-  // <SignUp onSignUp={handleSignUp} />
+  const connectWallet = async () => {
+    if (isConnecting) {
+      setError('Connection request is already pending. Please check MetaMask.');
+      return;
+    }
 
-    return (
-    <div>
-      {/* Pass the handleSignUp function to the SignUp component via props */}
-      <SignUp onSignUp={handleSignUp} />
-    </div>
+    try {
+      setIsConnecting(true);
+      setError(null);
+
+      if (!window.ethereum) {
+        setError('Please install MetaMask to use this application.');
+        return;
+      }
+
+      const accounts = await window.ethereum.request({ 
+        method: 'eth_requestAccounts' 
+      });
+      
+      if (accounts.length > 0) {
+        setCurrentAccount(accounts[0]);
+        setIsLoggedIn(true);
+        await fetchUserContracts(accounts[0]);
+      }
+    } catch (error) {
+      console.error('Error connecting to MetaMask:', error);
+      if (error.code === -32002) {
+        setError('Please open MetaMask to complete the connection.');
+      } else if (error.code === 4001) {
+        setError('Connection rejected. Please try again.');
+      } else {
+        setError('An error occurred while connecting to MetaMask.');
+      }
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const fetchUserContracts = async (userAddress) => {
+    try {
+      if (!contract) {
+        console.error('Contract not initialized');
+        return;
+      }
+
+      const result = await contract.getUserContracts(userAddress);
+      const { activeContracts: active, completedContracts: completed } = result;
+
+      // Transform contract data
+      const transformedActive = active.map((c, index) => ({
+        id: index,
+        pgOwner: c.pgOwner,
+        renter: c.renter,
+        depositAmount: c.depositAmount,
+        startDate: c.startDate.toNumber(),
+        endDate: c.endDate.toNumber(),
+        isActive: c.isActive,
+        isCompleted: c.isCompleted
+      }));
+
+      const transformedCompleted = completed.map((c, index) => ({
+        id: index,
+        pgOwner: c.pgOwner,
+        renter: c.renter,
+        depositAmount: c.depositAmount,
+        startDate: c.startDate.toNumber(),
+        endDate: c.endDate.toNumber(),
+        isActive: c.isActive,
+        isCompleted: c.isCompleted
+      }));
+
+      setActiveContracts(transformedActive);
+      setAllContracts([...transformedActive, ...transformedCompleted]);
+    } catch (error) {
+      console.error('Error fetching user contracts:', error);
+      setError('An error occurred while fetching your contracts.');
+    }
+  };
+
+  const createContract = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (!window.ethereum || !contract) {
+        setError('Please install MetaMask or reload the page.');
+        return;
+      }
+
+      if (!ethers.utils.isAddress(renterAddress)) {
+        setError('Please enter a valid renter address.');
+        return;
+      }
+
+      if (depositAmount <= 0) {
+        setError('Deposit amount must be greater than 0.');
+        return;
+      }
+
+      if (contractDuration <= 0) {
+        setError('Contract duration must be greater than 0.');
+        return;
+      }
+
+      // Convert deposit amount to Wei
+      const depositInWei = ethers.utils.parseEther(depositAmount.toString());
+      
+      console.log('Creating contract with params:', {
+        renterAddress,
+        depositInWei: depositInWei.toString(),
+        contractDuration
+      });
+
+      // Estimate gas first
+      const gasEstimate = await contract.estimateGas.createContract(
+        renterAddress,
+        depositInWei,
+        contractDuration
+      );
+
+      console.log('Estimated gas:', gasEstimate.toString());
+
+      // Create the contract with estimated gas
+      const tx = await contract.createContract(
+        renterAddress,
+        depositInWei,
+        contractDuration,
+        {
+          gasLimit: gasEstimate.mul(120).div(100) // Add 20% buffer to gas estimate
+        }
+      );
+      
+      console.log('Transaction sent:', tx.hash);
+      
+      // Wait for transaction to be mined
+      const receipt = await tx.wait();
+      console.log('Transaction confirmed:', receipt);
+
+      // Reset form
+      setDepositAmount(0);
+      setContractDuration(0);
+      setRenterAddress('');
+      
+      // Refresh contracts
+      await fetchUserContracts(currentAccount);
+      
+      setError(null);
+    } catch (error) {
+      console.error('Error creating contract:', error);
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        setError('Insufficient funds to create contract.');
+      } else if (error.code === 4001) {
+        setError('Transaction rejected. Please try again.');
+      } else {
+        setError(`Error: ${error.message || 'An error occurred while creating the contract.'}`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const signContract = async (contractId, depositAmount) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (!contract) {
+        setError('Contract not initialized. Please refresh the page.');
+        return;
+      }
+
+      // Estimate gas first
+      const gasEstimate = await contract.estimateGas.signContract(contractId, {
+        value: depositAmount
+      });
+
+      console.log('Estimated gas for signing:', gasEstimate.toString());
+
+      const tx = await contract.signContract(contractId, {
+        value: depositAmount,
+        gasLimit: gasEstimate.mul(120).div(100) // Add 20% buffer
+      });
+      
+      console.log('Sign transaction sent:', tx.hash);
+      
+      const receipt = await tx.wait();
+      console.log('Sign transaction confirmed:', receipt);
+
+      await fetchUserContracts(currentAccount);
+    } catch (error) {
+      console.error('Error signing contract:', error);
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        setError('Insufficient funds to sign contract.');
+      } else if (error.code === 4001) {
+        setError('Transaction rejected. Please try again.');
+      } else {
+        setError(`Error: ${error.message || 'An error occurred while signing the contract.'}`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleDashboard = () => {
+    setIsRenter((prevState) => !prevState);
+    if (currentAccount) {
+      fetchUserContracts(currentAccount);
+    }
+  };
+
+  const renderContractCard = (contract, index) => (
+    <li key={index} className="mb-4 p-4 bg-gray-100 rounded">
+      <p>Contract ID: {contract.id}</p>
+      <p>PG Owner: {contract.pgOwner}</p>
+      <p>Renter: {contract.renter}</p>
+      <p>Deposit Amount: {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
+      <p>Start Date: {contract.startDate ? new Date(contract.startDate * 1000).toLocaleString() : 'Not started'}</p>
+      <p>End Date: {new Date(contract.endDate * 1000).toLocaleString()}</p>
+      {isRenter && !contract.isActive && contract.renter.toLowerCase() === currentAccount?.toLowerCase() && (
+        <div className="mt-4 space-x-4">
+          <button
+            onClick={() => signContract(contract.id, contract.depositAmount)}
+            disabled={isLoading}
+            className={`inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white ${
+              isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
+          >
+            {isLoading ? 'Processing...' : 'Accept & Pay Deposit'}
+          </button>
+          <button
+            disabled={isLoading}
+            className={`inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white ${
+              isLoading ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500`}
+          >
+            Reject
+          </button>
+        </div>
+      )}
+    </li>
   );
 
+  return (
+    <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Rental Platform
+        </h2>
+      </div>
+
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          {currentAccount ? (
+            <div>
+              <p className="mb-4 text-sm text-gray-600">Connected Account: {currentAccount}</p>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold">
+                  {isRenter ? 'Renter Dashboard' : 'Validator Dashboard'}
+                </h2>
+                <label className="inline-flex items-center">
+                  <span className="mr-2">Renter</span>
+                  <input
+                    type="checkbox"
+                    checked={!isRenter}
+                    onChange={toggleDashboard}
+                    className="form-checkbox h-5 w-5 text-blue-500"
+                  />
+                  <span className="ml-2">Validator</span>
+                </label>
+              </div>
+              <h3 className="text-xl font-bold mb-2">Active Contracts</h3>
+              {activeContracts.length > 0 ? (
+                <ul>
+                  {activeContracts.map((contract, index) => (
+                    <li key={index} className="mb-4 p-4 bg-gray-100 rounded">
+                      <p>Contract ID: {contract.id}</p>
+                      <p>PG Owner: {contract.pgOwner}</p>
+                      <p>Renter: {contract.renter}</p>
+                      <p>Deposit Amount: {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
+                      <p>Start Date: {new Date(contract.startDate * 1000).toLocaleString()}</p>
+                      <p>End Date: {new Date(contract.endDate * 1000).toLocaleString()}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No active contracts.</p>
+              )}
+              <h3 className="text-xl font-bold mb-2 mt-6">All Contracts</h3>
+              {allContracts.length > 0 ? (
+                <ul>
+                  {allContracts.map((contract, index) => (
+                    <li key={index} className="mb-4 p-4 bg-gray-100 rounded">
+                      <p>Contract ID: {contract.id}</p>
+                      <p>PG Owner: {contract.pgOwner}</p>
+                      <p>Renter: {contract.renter}</p>
+                      <p>Deposit Amount: {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
+                      <p>Start Date: {new Date(contract.startDate * 1000).toLocaleString()}</p>
+                      <p>End Date: {new Date(contract.endDate * 1000).toLocaleString()}</p>
+                      <p>Status: {contract.isCompleted ? 'Completed' : 'Active'}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No contracts found.</p>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={connectWallet}
+              disabled={isConnecting}
+              className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                isConnecting 
+                  ? 'bg-indigo-400 cursor-not-allowed' 
+                  : 'bg-indigo-600 hover:bg-indigo-700'
+              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500`}
+            >
+              {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+            </button>
+          )}
+          {error && (
+            <div className="text-sm text-red-600 mt-4 text-center">
+              {error}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isRenter && isLoggedIn && (
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+            <h2 className="text-2xl font-bold mb-4">Create New Contract</h2>
+            <div className="space-y-6">
+              <div>
+                <label htmlFor="renterAddress" className="block text-sm font-medium text-gray-700">
+                  Renter Address
+                </label>
+                <input
+                  type="text"
+                  id="renterAddress"
+                  value={renterAddress}
+                  onChange={(e) => setRenterAddress(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="0x..."
+                />
+              </div>
+              <div>
+                <label htmlFor="depositAmount" className="block text-sm font-medium text-gray-700">
+                  Deposit Amount (ETH)
+                </label>
+                <input
+                  type="number"
+                  id="depositAmount"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label htmlFor="contractDuration" className="block text-sm font-medium text-gray-700">
+                  Contract Duration (seconds)
+                </label>
+                <input
+                  type="number"
+                  id="contractDuration"
+                  value={contractDuration}
+                  onChange={(e) => setContractDuration(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
+                  min="0"
+                />
+              </div>
+              <button
+                onClick={createContract}
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Create Contract
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          <h3 className="text-xl font-bold mb-2">Active Contracts</h3>
+          {activeContracts.length > 0 ? (
+            <ul>
+              {activeContracts.map((contract, index) => renderContractCard(contract, index))}
+            </ul>
+          ) : (
+            <p>No active contracts.</p>
+          )}
+        </div>
+      </div> */}
+    </div>
+  );
 };
 
-export default App;
+export default RentalPlatform;
