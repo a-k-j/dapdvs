@@ -8,6 +8,7 @@ const RentalPlatform = () => {
   const [isRenter, setIsRenter] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeContracts, setActiveContracts] = useState([]);
+  const [completedContracts, setCompletedContracts] = useState([]);
   const [allContracts, setAllContracts] = useState([]);
   const [error, setError] = useState(null);
   const [depositAmount, setDepositAmount] = useState(0);
@@ -39,83 +40,20 @@ const RentalPlatform = () => {
     fetchContractIdCounter();
   }, [contract]);
 
-  const initializeContract = async () => {
-  if (window.ethereum && currentAccount) {
-    try {
-      console.log('Initializing contract...');
-      
-      // First, get the network from window.ethereum
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      console.log('Current chainId:', chainId);
-
-      if (chainId !== '0xaa36a7') { // Sepolia chainId
-        console.log('Not on Sepolia, attempting to switch...');
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0xaa36a7' }],
-          });
-        } catch (switchError) {
-          console.error('Error switching network:', switchError);
-          throw switchError;
-        }
-      }
-
-      // Create provider using window.ethereum instead of RPC URL
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      console.log('Provider created');
-      setProvider(provider);
-
-      // Get signer
-      const signer = await provider.getSigner();
-      console.log('Signer obtained:', await signer.getAddress());
-      setSigner(signer);
-
-      // Initialize contract with signer
-      const contractInstance = new ethers.Contract(
-        DAPDVS_ADDRESS,
-        DAPDVS_ABI,
-        signer
-      );
-      console.log('Contract instance created');
-      setContract(contractInstance);
-
-      // Test contract connection
+  useEffect(() => {
+    const setup = async () => {
       try {
-        const nextId = await contractInstance.nextContractId();
-        console.log('Contract connected successfully, nextId:', nextId);
-      } catch (contractError) {
-        console.error('Contract call failed:', contractError);
-        throw new Error('Contract initialization failed: ' + contractError.message);
+        await initializeContract();
+        await fetchUserContracts(currentAccount);
+      } catch (error) {
+        console.error('Setup failed:', error);
       }
+    };
 
-      // Fetch contracts after successful initialization
-      await fetchUserContracts(currentAccount);
-
-    } catch (error) {
-      console.error('Detailed initialization error:', error);
-      setError(`Contract initialization failed: ${error.message}`);
-      throw error;
+    if (currentAccount) {
+      setup();
     }
-  } else {
-    console.error('Ethereum object or account not available');
-    setError('MetaMask not available or account not connected');
-  }
-};
-
-useEffect(() => {
-  const setup = async () => {
-    try {
-      await initializeContract();
-    } catch (error) {
-      console.error('Setup failed:', error);
-    }
-  };
-
-  if (currentAccount) {
-    setup();
-  }
-}, [currentAccount]);
+  }, [currentAccount]);
 
   const checkIfWalletIsConnected = async () => {
     try {
@@ -152,7 +90,6 @@ useEffect(() => {
         return;
       }
 
-      // Request account access
       const accounts = await window.ethereum.request({ 
         method: 'eth_requestAccounts' 
       });
@@ -203,6 +140,66 @@ useEffect(() => {
     }
   };
 
+  const initializeContract = async () => {
+    if (window.ethereum && currentAccount) {
+      try {
+        console.log('Initializing contract...');
+        
+        // First, get the network from window.ethereum
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+        console.log('Current chainId:', chainId);
+
+        if (chainId !== '0xaa36a7') { // Sepolia chainId
+          console.log('Not on Sepolia, attempting to switch...');
+          try {
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0xaa36a7' }],
+            });
+          } catch (switchError) {
+            console.error('Error switching network:', switchError);
+            throw switchError;
+          }
+        }
+
+        // Create provider using window.ethereum instead of RPC URL
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        console.log('Provider created');
+        setProvider(provider);
+
+        // Get signer
+        const signer = await provider.getSigner();
+        console.log('Signer obtained:', await signer.getAddress());
+        setSigner(signer);
+
+        // Initialize contract with signer
+        const contractInstance = new ethers.Contract(
+          DAPDVS_ADDRESS,
+          DAPDVS_ABI,
+          signer
+        );
+        console.log('Contract instance created');
+        setContract(contractInstance);
+
+        // Test contract connection
+        try {
+          const nextId = await contractInstance.nextContractId();
+          console.log('Contract connected successfully, nextId:', nextId);
+        } catch (contractError) {
+          console.error('Contract call failed:', contractError);
+          throw new Error('Contract initialization failed: ' + contractError.message);
+        }
+      } catch (error) {
+        console.error('Detailed initialization error:', error);
+        setError(`Contract initialization failed: ${error.message}`);
+        throw error;
+      }
+    } else {
+      console.error('Ethereum object or account not available');
+      setError('MetaMask not available or account not connected');
+    }
+  };
+
     const fetchUserContracts = async (userAddress) => {
     try {
       if (!contract) {
@@ -243,15 +240,16 @@ useEffect(() => {
       // Filter contracts based on user role
       const filteredActive = transformedActive.filter(c => 
         (isRenter && c.renter.toLowerCase() === currentAccount?.toLowerCase()) ||
-        (!isRenter && c.pgOwner.toLowerCase() === currentAccount?.toLowerCase())
+        (!isRenter && (c.pgOwner.toLowerCase() === currentAccount?.toLowerCase() || c.validator?.toLowerCase() === currentAccount?.toLowerCase()))
       );
 
       const filteredCompleted = transformedCompleted.filter(c => 
         (isRenter && c.renter.toLowerCase() === currentAccount?.toLowerCase()) ||
-        (!isRenter && c.pgOwner.toLowerCase() === currentAccount?.toLowerCase())
+        (!isRenter && (c.pgOwner.toLowerCase() === currentAccount?.toLowerCase() || c.validator?.toLowerCase() === currentAccount?.toLowerCase()))
       );
 
       setActiveContracts(filteredActive);
+      setCompletedContracts(filteredCompleted);
       setAllContracts([...filteredActive, ...filteredCompleted]);
     } catch (error) {
       console.error('Error fetching user contracts:', error);
@@ -390,7 +388,7 @@ useEffect(() => {
     }
   };
 
-    const renderContractCard = (contract, index) => (
+  const renderContractCard = (contract, index) => (
     <div key={index} className="mb-4 p-4 bg-gray-100 rounded-lg shadow">
       <div className="grid grid-cols-2 gap-4">
         <p className="text-sm"><span className="font-semibold">Contract ID:</span> {contract.id}</p>
@@ -402,7 +400,7 @@ useEffect(() => {
         <p className="text-sm col-span-2"><span className="font-semibold">End:</span> {new Date(contract.endDate * 1000).toLocaleString()}</p>
       </div>
       
-      {isRenter && !contract.isActive && contract.renter.toLowerCase() === currentAccount?.toLowerCase() && (
+      {(!isRenter || (isRenter && contract.renter.toLowerCase() === currentAccount?.toLowerCase())) && !contract.isActive && (
         <div className="mt-4 flex space-x-4">
           <button
             onClick={() => signContract(contract.id, contract.depositAmount)}
