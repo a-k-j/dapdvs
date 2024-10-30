@@ -24,27 +24,41 @@ const RentalPlatform = () => {
   }, []);
 
   useEffect(() => {
-    if (window.ethereum) {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      setProvider(provider);
-      const signer = provider.getSigner();
-      setSigner(signer);
-      const contractInstance = new ethers.Contract(DAPDVS_ADDRESS, DAPDVS_ABI, signer);
-      setContract(contractInstance);
-    }
+    const initializeContract = async () => {
+      if (window.ethereum && currentAccount) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          setProvider(provider);
+          const signer = await provider.getSigner();
+          setSigner(signer);
+          const contractInstance = new ethers.Contract(DAPDVS_ADDRESS, DAPDVS_ABI, signer);
+          setContract(contractInstance);
+          
+          // Fetch contracts after contract is initialized
+          await fetchUserContracts(currentAccount);
+        } catch (error) {
+          console.error('Error initializing contract:', error);
+          setError('Failed to initialize the contract. Please try refreshing the page.');
+        }
+      }
+    };
+
+    initializeContract();
   }, [currentAccount]);
 
   const checkIfWalletIsConnected = async () => {
     try {
-      if (window.ethereum) {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          setCurrentAccount(accounts[0]);
-          setIsLoggedIn(true);
-          await fetchUserContracts(accounts[0]);
-        }
-      } else {
+      if (!window.ethereum) {
         setError('Please install MetaMask to use this application.');
+        return;
+      }
+
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      
+      if (accounts.length > 0) {
+        const account = accounts[0];
+        setCurrentAccount(account);
+        setIsLoggedIn(true);
       }
     } catch (error) {
       console.error('Error checking wallet connection:', error);
@@ -72,9 +86,9 @@ const RentalPlatform = () => {
       });
       
       if (accounts.length > 0) {
-        setCurrentAccount(accounts[0]);
+        const account = accounts[0];
+        setCurrentAccount(account);
         setIsLoggedIn(true);
-        await fetchUserContracts(accounts[0]);
       }
     } catch (error) {
       console.error('Error connecting to MetaMask:', error);
@@ -141,7 +155,7 @@ const RentalPlatform = () => {
         return;
       }
 
-      if (!ethers.utils.isAddress(renterAddress)) {
+      if (!ethers.isAddress(renterAddress)) {
         setError('Please enter a valid renter address.');
         return;
       }
@@ -157,7 +171,7 @@ const RentalPlatform = () => {
       }
 
       // Convert deposit amount to Wei
-      const depositInWei = ethers.utils.parseEther(depositAmount.toString());
+      const depositInWei = ethers.parseEther(depositAmount.toString());
       
       console.log('Creating contract with params:', {
         renterAddress,
@@ -166,7 +180,7 @@ const RentalPlatform = () => {
       });
 
       // Estimate gas first
-      const gasEstimate = await contract.estimateGas.createContract(
+      const gasEstimate = await contract.createContract.estimateGas(
         renterAddress,
         depositInWei,
         contractDuration
@@ -180,7 +194,7 @@ const RentalPlatform = () => {
         depositInWei,
         contractDuration,
         {
-          gasLimit: gasEstimate.mul(120).div(100) // Add 20% buffer to gas estimate
+          gasLimit: (gasEstimate*120n)/(100n) // Add 20% buffer to gas estimate
         }
       );
       
@@ -262,20 +276,24 @@ const RentalPlatform = () => {
     }
   };
 
-  const renderContractCard = (contract, index) => (
-    <li key={index} className="mb-4 p-4 bg-gray-100 rounded">
-      <p>Contract ID: {contract.id}</p>
-      <p>PG Owner: {contract.pgOwner}</p>
-      <p>Renter: {contract.renter}</p>
-      <p>Deposit Amount: {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
-      <p>Start Date: {contract.startDate ? new Date(contract.startDate * 1000).toLocaleString() : 'Not started'}</p>
-      <p>End Date: {new Date(contract.endDate * 1000).toLocaleString()}</p>
+    const renderContractCard = (contract, index) => (
+    <div key={index} className="mb-4 p-4 bg-gray-100 rounded-lg shadow">
+      <div className="grid grid-cols-2 gap-4">
+        <p className="text-sm"><span className="font-semibold">Contract ID:</span> {contract.id}</p>
+        <p className="text-sm"><span className="font-semibold">Status:</span> {contract.isCompleted ? 'Completed' : 'Active'}</p>
+        <p className="text-sm"><span className="font-semibold">PG Owner:</span> {contract.pgOwner}</p>
+        <p className="text-sm"><span className="font-semibold">Renter:</span> {contract.renter}</p>
+        <p className="text-sm"><span className="font-semibold">Deposit:</span> {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
+        <p className="text-sm"><span className="font-semibold">Start:</span> {contract.startDate ? new Date(contract.startDate * 1000).toLocaleString() : 'Not started'}</p>
+        <p className="text-sm col-span-2"><span className="font-semibold">End:</span> {new Date(contract.endDate * 1000).toLocaleString()}</p>
+      </div>
+      
       {isRenter && !contract.isActive && contract.renter.toLowerCase() === currentAccount?.toLowerCase() && (
-        <div className="mt-4 space-x-4">
+        <div className="mt-4 flex space-x-4">
           <button
             onClick={() => signContract(contract.id, contract.depositAmount)}
             disabled={isLoading}
-            className={`inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white ${
+            className={`flex-1 py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white ${
               isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
             } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
           >
@@ -283,7 +301,7 @@ const RentalPlatform = () => {
           </button>
           <button
             disabled={isLoading}
-            className={`inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white ${
+            className={`flex-1 py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white ${
               isLoading ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'
             } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500`}
           >
@@ -291,162 +309,139 @@ const RentalPlatform = () => {
           </button>
         </div>
       )}
-    </li>
+    </div>
   );
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+    <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold text-center text-gray-900 mb-8">
           Rental Platform
-        </h2>
-      </div>
+        </h1>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          {currentAccount ? (
-            <div>
-              <p className="mb-4 text-sm text-gray-600">Connected Account: {currentAccount}</p>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold">
-                  {isRenter ? 'Renter Dashboard' : 'Validator Dashboard'}
-                </h2>
-                <label className="inline-flex items-center">
-                  <span className="mr-2">Renter</span>
-                  <input
-                    type="checkbox"
-                    checked={!isRenter}
-                    onChange={toggleDashboard}
-                    className="form-checkbox h-5 w-5 text-blue-500"
-                  />
-                  <span className="ml-2">Validator</span>
-                </label>
-              </div>
-              <h3 className="text-xl font-bold mb-2">Active Contracts</h3>
-              {activeContracts.length > 0 ? (
-                <ul>
-                  {activeContracts.map((contract, index) => (
-                    <li key={index} className="mb-4 p-4 bg-gray-100 rounded">
-                      <p>Contract ID: {contract.id}</p>
-                      <p>PG Owner: {contract.pgOwner}</p>
-                      <p>Renter: {contract.renter}</p>
-                      <p>Deposit Amount: {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
-                      <p>Start Date: {new Date(contract.startDate * 1000).toLocaleString()}</p>
-                      <p>End Date: {new Date(contract.endDate * 1000).toLocaleString()}</p>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No active contracts.</p>
-              )}
-              <h3 className="text-xl font-bold mb-2 mt-6">All Contracts</h3>
-              {allContracts.length > 0 ? (
-                <ul>
-                  {allContracts.map((contract, index) => (
-                    <li key={index} className="mb-4 p-4 bg-gray-100 rounded">
-                      <p>Contract ID: {contract.id}</p>
-                      <p>PG Owner: {contract.pgOwner}</p>
-                      <p>Renter: {contract.renter}</p>
-                      <p>Deposit Amount: {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
-                      <p>Start Date: {new Date(contract.startDate * 1000).toLocaleString()}</p>
-                      <p>End Date: {new Date(contract.endDate * 1000).toLocaleString()}</p>
-                      <p>Status: {contract.isCompleted ? 'Completed' : 'Active'}</p>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No contracts found.</p>
-              )}
-            </div>
-          ) : (
+        {!currentAccount ? (
+          <div className="bg-white rounded-lg shadow p-6 mb-8">
             <button
               onClick={connectWallet}
               disabled={isConnecting}
-              className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                isConnecting 
-                  ? 'bg-indigo-400 cursor-not-allowed' 
-                  : 'bg-indigo-600 hover:bg-indigo-700'
+              className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                isConnecting ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
               } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500`}
             >
               {isConnecting ? 'Connecting...' : 'Connect Wallet'}
             </button>
-          )}
-          {error && (
-            <div className="text-sm text-red-600 mt-4 text-center">
-              {error}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {isRenter && isLoggedIn && (
-        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-          <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-            <h2 className="text-2xl font-bold mb-4">Create New Contract</h2>
-            <div className="space-y-6">
-              <div>
-                <label htmlFor="renterAddress" className="block text-sm font-medium text-gray-700">
-                  Renter Address
-                </label>
-                <input
-                  type="text"
-                  id="renterAddress"
-                  value={renterAddress}
-                  onChange={(e) => setRenterAddress(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder="0x..."
-                />
-              </div>
-              <div>
-                <label htmlFor="depositAmount" className="block text-sm font-medium text-gray-700">
-                  Deposit Amount (ETH)
-                </label>
-                <input
-                  type="number"
-                  id="depositAmount"
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
-                  step="0.01"
-                  min="0"
-                />
-              </div>
-              <div>
-                <label htmlFor="contractDuration" className="block text-sm font-medium text-gray-700">
-                  Contract Duration (seconds)
-                </label>
-                <input
-                  type="number"
-                  id="contractDuration"
-                  value={contractDuration}
-                  onChange={(e) => setContractDuration(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
-                  min="0"
-                />
-              </div>
-              <button
-                onClick={createContract}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Create Contract
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <>
+            <div className="bg-white rounded-lg shadow p-6 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <p className="text-sm text-gray-600">Connected: {currentAccount}</p>
+                <div className="flex items-center space-x-4">
+                  <span className={`text-sm ${isRenter ? 'text-indigo-600 font-medium' : 'text-gray-500'}`}>Renter</span>
+                  <button
+                    onClick={toggleDashboard}
+                    className={`relative inline-flex items-center h-6 rounded-full w-11 ${
+                      !isRenter ? 'bg-indigo-600' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span className={`inline-block w-4 h-4 transform transition-transform bg-white rounded-full ${
+                      !isRenter ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                  <span className={`text-sm ${!isRenter ? 'text-indigo-600 font-medium' : 'text-gray-500'}`}>Validator</span>
+                </div>
+              </div>
 
-      {/* <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <h3 className="text-xl font-bold mb-2">Active Contracts</h3>
-          {activeContracts.length > 0 ? (
-            <ul>
-              {activeContracts.map((contract, index) => renderContractCard(contract, index))}
-            </ul>
-          ) : (
-            <p>No active contracts.</p>
-          )}
-        </div>
-      </div> */}
+              {isRenter && (
+                <div className="border-t pt-6">
+                  <h2 className="text-xl font-semibold mb-4">Create New Contract</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="renterAddress" className="block text-sm font-medium text-gray-700">
+                        Renter Address
+                      </label>
+                      <input
+                        type="text"
+                        id="renterAddress"
+                        value={renterAddress}
+                        onChange={(e) => setRenterAddress(e.target.value)}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
+                        placeholder="0x..."
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="depositAmount" className="block text-sm font-medium text-gray-700">
+                        Deposit Amount (ETH)
+                      </label>
+                      <input
+                        type="number"
+                        id="depositAmount"
+                        value={depositAmount}
+                        onChange={(e) => setDepositAmount(e.target.value)}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="contractDuration" className="block text-sm font-medium text-gray-700">
+                        Contract Duration (seconds)
+                      </label>
+                      <input
+                        type="number"
+                        id="contractDuration"
+                        value={contractDuration}
+                        onChange={(e) => setContractDuration(e.target.value)}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
+                        min="0"
+                      />
+                    </div>
+                    <button
+                      onClick={createContract}
+                      disabled={isLoading}
+                      className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                        isLoading ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700'
+                      } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500`}
+                    >
+                      {isLoading ? 'Creating Contract...' : 'Create Contract'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-8">
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold mb-4">Active Contracts</h2>
+                {activeContracts.length > 0 ? (
+                  <div className="space-y-4">
+                    {activeContracts.map((contract, index) => renderContractCard(contract, index))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500">No active contracts found.</p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold mb-4">All Contracts</h2>
+                {allContracts.length > 0 ? (
+                  <div className="space-y-4">
+                    {allContracts.map((contract, index) => renderContractCard(contract, index))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500">No contracts found.</p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {error && (
+          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-600 text-center">{error}</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
