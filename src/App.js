@@ -18,19 +18,73 @@ const RentalPlatform = () => {
   const [contract, setContract] = useState(null);
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
+  const [contractIdCounter, setContractIdCounter] = useState(1);
 
   useEffect(() => {
     checkIfWalletIsConnected();
   }, []);
 
   useEffect(() => {
+    const fetchContractIdCounter = async () => {
+      if (contract) {
+        try {
+          const nextId = await contract.nextContractId();
+          setContractIdCounter(Number(nextId));
+        } catch (error) {
+          console.error('Error fetching contract ID counter:', error);
+        }
+      }
+    };
+
+    fetchContractIdCounter();
+  }, [contract]);
+
+  useEffect(() => {
     const initializeContract = async () => {
       if (window.ethereum && currentAccount) {
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
+          // Check if we're on Sepolia network
+          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+          if (chainId !== '0xaa36a7') { // Sepolia chainId
+            setError('Please switch to the Sepolia test network');
+            try {
+              await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: '0xaa36a7' }], // Sepolia chainId
+              });
+            } catch (switchError) {
+              if (switchError.code === 4902) {
+                await window.ethereum.request({
+                  method: 'wallet_addEthereumChain',
+                  params: [{
+                    chainId: '0xaa36a7',
+                    chainName: 'Sepolia Test Network',
+                    nativeCurrency: {
+                      name: 'SepoliaETH',
+                      symbol: 'SEP',
+                      decimals: 18
+                    },
+                    rpcUrls: [process.env.REACT_APP_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL],
+                    blockExplorerUrls: ['https://sepolia.etherscan.io']
+                  }]
+                });
+              } else {
+                throw switchError;
+              }
+            }
+          }
+
+          // Initialize provider with Sepolia network
+          const provider = new ethers.JsonRpcProvider(
+            process.env.REACT_APP_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL
+          );
           setProvider(provider);
-          const signer = await provider.getSigner();
+          
+          // Get signer
+          const signer = await provider.getSigner(currentAccount);
           setSigner(signer);
+          
+          // Initialize contract with signer
           const contractInstance = new ethers.Contract(DAPDVS_ADDRESS, DAPDVS_ABI, signer);
           setContract(contractInstance);
           
@@ -38,7 +92,7 @@ const RentalPlatform = () => {
           await fetchUserContracts(currentAccount);
         } catch (error) {
           console.error('Error initializing contract:', error);
-          setError('Failed to initialize the contract. Please try refreshing the page.');
+          setError('Failed to initialize the contract. Please ensure you are connected to Sepolia network.');
         }
       }
     };
@@ -81,9 +135,37 @@ const RentalPlatform = () => {
         return;
       }
 
+      // Request account access
       const accounts = await window.ethereum.request({ 
         method: 'eth_requestAccounts' 
       });
+      
+      // Switch to Sepolia network
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0xaa36a7' }], // Sepolia chainId
+        });
+      } catch (switchError) {
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0xaa36a7',
+              chainName: 'Sepolia Test Network',
+              nativeCurrency: {
+                name: 'SepoliaETH',
+                symbol: 'SEP',
+                decimals: 18
+              },
+              rpcUrls: [process.env.REACT_APP_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL],
+              blockExplorerUrls: ['https://sepolia.etherscan.io']
+            }]
+          });
+        } else {
+          throw switchError;
+        }
+      }
       
       if (accounts.length > 0) {
         const account = accounts[0];
@@ -104,7 +186,7 @@ const RentalPlatform = () => {
     }
   };
 
-  const fetchUserContracts = async (userAddress) => {
+    const fetchUserContracts = async (userAddress) => {
     try {
       if (!contract) {
         console.error('Contract not initialized');
@@ -114,31 +196,46 @@ const RentalPlatform = () => {
       const result = await contract.getUserContracts(userAddress);
       const { activeContracts: active, completedContracts: completed } = result;
 
-      // Transform contract data
-      const transformedActive = active.map((c, index) => ({
-        id: index,
+      // Transform contract data and preserve actual contract IDs
+      const transformedActive = active.map((c) => ({
+        id: c.contractId || contractIdCounter - 1, // Fallback to latest contract ID if not available
         pgOwner: c.pgOwner,
         renter: c.renter,
         depositAmount: c.depositAmount,
-        startDate: c.startDate.toNumber(),
-        endDate: c.endDate.toNumber(),
+        startDate: Number(c.startDate),
+        endDate: Number(c.endDate),
         isActive: c.isActive,
-        isCompleted: c.isCompleted
+        isCompleted: c.isCompleted,
+        validatorRequested: c.validatorRequested,
+        validator: c.validator
       }));
 
-      const transformedCompleted = completed.map((c, index) => ({
-        id: index,
+      const transformedCompleted = completed.map((c) => ({
+        id: c.contractId || contractIdCounter - 1,
         pgOwner: c.pgOwner,
         renter: c.renter,
         depositAmount: c.depositAmount,
-        startDate: c.startDate.toNumber(),
-        endDate: c.endDate.toNumber(),
+        startDate: Number(c.startDate),
+        endDate: Number(c.endDate),
         isActive: c.isActive,
-        isCompleted: c.isCompleted
+        isCompleted: c.isCompleted,
+        validatorRequested: c.validatorRequested,
+        validator: c.validator
       }));
 
-      setActiveContracts(transformedActive);
-      setAllContracts([...transformedActive, ...transformedCompleted]);
+      // Filter contracts based on user role
+      const filteredActive = transformedActive.filter(c => 
+        (isRenter && c.renter.toLowerCase() === currentAccount?.toLowerCase()) ||
+        (!isRenter && c.pgOwner.toLowerCase() === currentAccount?.toLowerCase())
+      );
+
+      const filteredCompleted = transformedCompleted.filter(c => 
+        (isRenter && c.renter.toLowerCase() === currentAccount?.toLowerCase()) ||
+        (!isRenter && c.pgOwner.toLowerCase() === currentAccount?.toLowerCase())
+      );
+
+      setActiveContracts(filteredActive);
+      setAllContracts([...filteredActive, ...filteredCompleted]);
     } catch (error) {
       console.error('Error fetching user contracts:', error);
       setError('An error occurred while fetching your contracts.');
@@ -280,10 +377,10 @@ const RentalPlatform = () => {
     <div key={index} className="mb-4 p-4 bg-gray-100 rounded-lg shadow">
       <div className="grid grid-cols-2 gap-4">
         <p className="text-sm"><span className="font-semibold">Contract ID:</span> {contract.id}</p>
-        <p className="text-sm"><span className="font-semibold">Status:</span> {contract.isCompleted ? 'Completed' : 'Active'}</p>
+        <p className="text-sm"><span className="font-semibold">Status:</span> {contract.isCompleted ? 'Completed' : (contract.isActive ? 'Active' : 'Pending')}</p>
         <p className="text-sm"><span className="font-semibold">PG Owner:</span> {contract.pgOwner}</p>
         <p className="text-sm"><span className="font-semibold">Renter:</span> {contract.renter}</p>
-        <p className="text-sm"><span className="font-semibold">Deposit:</span> {ethers.utils.formatEther(contract.depositAmount)} ETH</p>
+        <p className="text-sm"><span className="font-semibold">Deposit:</span> {ethers.formatEther(contract.depositAmount)} ETH</p>
         <p className="text-sm"><span className="font-semibold">Start:</span> {contract.startDate ? new Date(contract.startDate * 1000).toLocaleString() : 'Not started'}</p>
         <p className="text-sm col-span-2"><span className="font-semibold">End:</span> {new Date(contract.endDate * 1000).toLocaleString()}</p>
       </div>
