@@ -39,66 +39,83 @@ const RentalPlatform = () => {
     fetchContractIdCounter();
   }, [contract]);
 
-  useEffect(() => {
-    const initializeContract = async () => {
-      if (window.ethereum && currentAccount) {
-        try {
-          // Check if we're on Sepolia network
-          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-          if (chainId !== '0xaa36a7') { // Sepolia chainId
-            setError('Please switch to the Sepolia test network');
-            try {
-              await window.ethereum.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: '0xaa36a7' }], // Sepolia chainId
-              });
-            } catch (switchError) {
-              if (switchError.code === 4902) {
-                await window.ethereum.request({
-                  method: 'wallet_addEthereumChain',
-                  params: [{
-                    chainId: '0xaa36a7',
-                    chainName: 'Sepolia Test Network',
-                    nativeCurrency: {
-                      name: 'SepoliaETH',
-                      symbol: 'SEP',
-                      decimals: 18
-                    },
-                    rpcUrls: [process.env.REACT_APP_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL],
-                    blockExplorerUrls: ['https://sepolia.etherscan.io']
-                  }]
-                });
-              } else {
-                throw switchError;
-              }
-            }
-          }
+  const initializeContract = async () => {
+  if (window.ethereum && currentAccount) {
+    try {
+      console.log('Initializing contract...');
+      
+      // First, get the network from window.ethereum
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      console.log('Current chainId:', chainId);
 
-          // Initialize provider with Sepolia network
-          const provider = new ethers.JsonRpcProvider(
-            process.env.REACT_APP_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL
-          );
-          setProvider(provider);
-          
-          // Get signer
-          const signer = await provider.getSigner(currentAccount);
-          setSigner(signer);
-          
-          // Initialize contract with signer
-          const contractInstance = new ethers.Contract(DAPDVS_ADDRESS, DAPDVS_ABI, signer);
-          setContract(contractInstance);
-          
-          // Fetch contracts after contract is initialized
-          await fetchUserContracts(currentAccount);
-        } catch (error) {
-          console.error('Error initializing contract:', error);
-          setError('Failed to initialize the contract. Please ensure you are connected to Sepolia network.');
+      if (chainId !== '0xaa36a7') { // Sepolia chainId
+        console.log('Not on Sepolia, attempting to switch...');
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0xaa36a7' }],
+          });
+        } catch (switchError) {
+          console.error('Error switching network:', switchError);
+          throw switchError;
         }
       }
-    };
 
-    initializeContract();
-  }, [currentAccount]);
+      // Create provider using window.ethereum instead of RPC URL
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      console.log('Provider created');
+      setProvider(provider);
+
+      // Get signer
+      const signer = await provider.getSigner();
+      console.log('Signer obtained:', await signer.getAddress());
+      setSigner(signer);
+
+      // Initialize contract with signer
+      const contractInstance = new ethers.Contract(
+        DAPDVS_ADDRESS,
+        DAPDVS_ABI,
+        signer
+      );
+      console.log('Contract instance created');
+      setContract(contractInstance);
+
+      // Test contract connection
+      try {
+        const nextId = await contractInstance.nextContractId();
+        console.log('Contract connected successfully, nextId:', nextId);
+      } catch (contractError) {
+        console.error('Contract call failed:', contractError);
+        throw new Error('Contract initialization failed: ' + contractError.message);
+      }
+
+      // Fetch contracts after successful initialization
+      await fetchUserContracts(currentAccount);
+
+    } catch (error) {
+      console.error('Detailed initialization error:', error);
+      setError(`Contract initialization failed: ${error.message}`);
+      throw error;
+    }
+  } else {
+    console.error('Ethereum object or account not available');
+    setError('MetaMask not available or account not connected');
+  }
+};
+
+useEffect(() => {
+  const setup = async () => {
+    try {
+      await initializeContract();
+    } catch (error) {
+      console.error('Setup failed:', error);
+    }
+  };
+
+  if (currentAccount) {
+    setup();
+  }
+}, [currentAccount]);
 
   const checkIfWalletIsConnected = async () => {
     try {
