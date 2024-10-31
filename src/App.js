@@ -15,6 +15,7 @@ const RentalPlatform = () => {
   const [contractDuration, setContractDuration] = useState(0);
   const [renterAddress, setRenterAddress] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [loadingContractId, setLoadingContractId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [contract, setContract] = useState(null);
   const [provider, setProvider] = useState(null);
@@ -162,7 +163,7 @@ const RentalPlatform = () => {
           }
         }
 
-        // Create provider using window.ethereum instead of RPC URL
+        // Create provider
         const provider = new ethers.BrowserProvider(window.ethereum);
         console.log('Provider created');
         setProvider(provider);
@@ -178,13 +179,12 @@ const RentalPlatform = () => {
           DAPDVS_ABI,
           signer
         );
-        console.log('Contract instance created');
-        setContract(contractInstance);
-
-        // Test contract connection
+        
+        // Verify contract connection
         try {
           const nextId = await contractInstance.nextContractId();
-          console.log('Contract connected successfully, nextId:', nextId);
+          console.log('Contract connected successfully, nextId:', nextId.toString());
+          setContract(contractInstance);
         } catch (contractError) {
           console.error('Contract call failed:', contractError);
           throw new Error('Contract initialization failed: ' + contractError.message);
@@ -200,62 +200,160 @@ const RentalPlatform = () => {
     }
   };
 
-    const fetchUserContracts = async (userAddress) => {
-    try {
-      if (!contract) {
-        console.error('Contract not initialized');
-        return;
-      }
+const signContract = async (contractId, depositAmount) => {
+  try {
+    setLoadingContractId(contractId);
+    setError(null);
 
-      const result = await contract.getUserContracts(userAddress);
-      const { activeContracts: active, completedContracts: completed } = result;
-
-      // Transform contract data and preserve actual contract IDs
-      const transformedActive = active.map((c) => ({
-        id: c.contractId || contractIdCounter - 1, // Fallback to latest contract ID if not available
-        pgOwner: c.pgOwner,
-        renter: c.renter,
-        depositAmount: c.depositAmount,
-        startDate: Number(c.startDate),
-        endDate: Number(c.endDate),
-        isActive: c.isActive,
-        isCompleted: c.isCompleted,
-        validatorRequested: c.validatorRequested,
-        validator: c.validator
-      }));
-
-      const transformedCompleted = completed.map((c) => ({
-        id: c.contractId || contractIdCounter - 1,
-        pgOwner: c.pgOwner,
-        renter: c.renter,
-        depositAmount: c.depositAmount,
-        startDate: Number(c.startDate),
-        endDate: Number(c.endDate),
-        isActive: c.isActive,
-        isCompleted: c.isCompleted,
-        validatorRequested: c.validatorRequested,
-        validator: c.validator
-      }));
-
-      // Filter contracts based on user role
-      const filteredActive = transformedActive.filter(c => 
-        (isRenter && c.renter.toLowerCase() === currentAccount?.toLowerCase()) ||
-        (!isRenter && (c.pgOwner.toLowerCase() === currentAccount?.toLowerCase() || c.validator?.toLowerCase() === currentAccount?.toLowerCase()))
-      );
-
-      const filteredCompleted = transformedCompleted.filter(c => 
-        (isRenter && c.renter.toLowerCase() === currentAccount?.toLowerCase()) ||
-        (!isRenter && (c.pgOwner.toLowerCase() === currentAccount?.toLowerCase() || c.validator?.toLowerCase() === currentAccount?.toLowerCase()))
-      );
-
-      setActiveContracts(filteredActive);
-      setCompletedContracts(filteredCompleted);
-      setAllContracts([...filteredActive, ...filteredCompleted]);
-    } catch (error) {
-      console.error('Error fetching user contracts:', error);
-      setError('An error occurred while fetching your contracts.');
+    if (!contract) {
+      throw new Error('Contract not initialized. Please refresh the page.');
     }
-  };
+
+    // Get contract details first to verify it's not already active
+    const contractDetails = await contract.getContractDetails(contractId);
+    if (contractDetails.isActive) {
+      throw new Error('This contract is already active.');
+    }
+
+    console.log('Signing contract:', contractId, 'with deposit:', depositAmount.toString());
+
+    const tx = await contract.signContract(contractId, {
+      value: depositAmount,
+      gasLimit: 300000 // Increased gas limit for better success rate
+    });
+    
+    console.log('Sign transaction sent:', tx.hash);
+    
+    // Wait for transaction confirmation
+    await tx.wait();
+    console.log('Transaction confirmed');
+    
+    // Refresh contracts after successful signing
+    await fetchUserContracts(currentAccount);
+    
+    setError(null);
+  } catch (error) {
+    console.error('Error signing contract:', error);
+    if (error.code === 'INSUFFICIENT_FUNDS') {
+      setError('Insufficient funds to sign contract.');
+    } else if (error.code === 4001) {
+      setError('Transaction rejected. Please try again.');
+    } else if (error.message.includes('execution reverted')) {
+      setError('Transaction failed. The contract may already be active or invalid.');
+    } else {
+      setError(`Error: ${error.message || 'An error occurred while signing the contract.'}`);
+    }
+  } finally {
+    setLoadingContractId(null);
+  }
+};
+
+  const fetchUserContracts = async (userAddress) => {
+  try {
+    if (!contract) {
+      console.error('Contract not initialized');
+      return;
+    }
+
+    const result = await contract.getUserContracts(userAddress);
+    
+    const transformContract = (contractData) => ({
+      id: Number(contractData.contractId || 0), // fallback to index if needed
+      pgOwner: contractData.pgOwner,
+      renter: contractData.renter,
+      depositAmount: contractData.depositAmount,
+      startDate: Number(contractData.startDate),
+      endDate: Number(contractData.endDate),
+      isActive: contractData.isActive,
+      isCompleted: contractData.isCompleted,
+      validatorRequested: contractData.validatorRequested,
+      validator: contractData.validator
+    });
+
+    // Transform active and completed contracts
+    const activeContracts = result[0].map(transformContract);
+    const completedContracts = result[1].map(transformContract);
+
+    // Filter contracts based on user role
+    const filteredActive = activeContracts.filter(c => {
+      const userAddress = currentAccount?.toLowerCase();
+      if (isRenter) {
+        return c.renter.toLowerCase() === userAddress && c.isActive && !c.isCompleted;
+      } else {
+        return c.pgOwner.toLowerCase() === userAddress && c.isActive && !c.isCompleted;
+      }
+    });
+
+    const filteredCompleted = completedContracts.filter(c => {
+      const userAddress = currentAccount?.toLowerCase();
+      return isRenter ? 
+        c.renter.toLowerCase() === userAddress :
+        c.pgOwner.toLowerCase() === userAddress;
+    });
+
+    setActiveContracts(filteredActive);
+    setCompletedContracts(filteredCompleted);
+    setAllContracts([...filteredActive, ...filteredCompleted]);
+  } catch (error) {
+    console.error('Error fetching user contracts:', error);
+    setError('An error occurred while fetching your contracts.');
+  }
+};
+
+// Update the renderContractCard function
+const renderContractCard = (contract, index) => {
+  const canSign = !contract.isActive && 
+                 isRenter && 
+                 contract.renter.toLowerCase() === currentAccount?.toLowerCase();
+
+  const isLoading = loadingContractId === contract.id;
+  const status = contract.isCompleted ? 'Completed' : 
+                 (contract.isActive ? 'Active' : 'Pending');
+
+  return (
+    <div key={index} className="mb-4 p-4 bg-gray-100 rounded-lg shadow">
+      <div className="grid grid-cols-2 gap-4">
+        <p className="text-sm">
+          <span className="font-semibold">Contract ID:</span> {contract.id}
+        </p>
+        <p className="text-sm">
+          <span className="font-semibold">Status:</span> {status}
+        </p>
+        <p className="text-sm">
+          <span className="font-semibold">PG Owner:</span> {contract.pgOwner}
+        </p>
+        <p className="text-sm">
+          <span className="font-semibold">Renter:</span> {contract.renter}
+        </p>
+        <p className="text-sm">
+          <span className="font-semibold">Deposit:</span> {ethers.formatEther(contract.depositAmount)} ETH
+        </p>
+        <p className="text-sm">
+          <span className="font-semibold">Start:</span> 
+          {contract.startDate ? new Date(contract.startDate * 1000).toLocaleString() : 'Not started'}
+        </p>
+        <p className="text-sm col-span-2">
+          <span className="font-semibold">End:</span> 
+          {contract.endDate ? new Date(contract.endDate * 1000).toLocaleString() : 'Not set'}
+        </p>
+      </div>
+      
+      {canSign && (
+        <div className="mt-4">
+          <button
+            onClick={() => signContract(contract.id, contract.depositAmount)}
+            disabled={isLoading}
+            className={`w-full py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white ${
+              isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
+          >
+            {isLoading ? 'Processing...' : 'Accept & Pay Deposit'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
   const createContract = async () => {
     try {
@@ -339,90 +437,9 @@ const RentalPlatform = () => {
     }
   };
 
-  const signContract = async (contractId, depositAmount) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      if (!contract) {
-        setError('Contract not initialized. Please refresh the page.');
-        return;
-      }
-
-      // Estimate gas first
-      const gasEstimate = await contract.estimateGas.signContract(contractId, {
-        value: depositAmount
-      });
-
-      console.log('Estimated gas for signing:', gasEstimate.toString());
-
-      const tx = await contract.signContract(contractId, {
-        value: depositAmount,
-        gasLimit: gasEstimate.mul(120).div(100) // Add 20% buffer
-      });
-      
-      console.log('Sign transaction sent:', tx.hash);
-      
-      const receipt = await tx.wait();
-      console.log('Sign transaction confirmed:', receipt);
-
-      await fetchUserContracts(currentAccount);
-    } catch (error) {
-      console.error('Error signing contract:', error);
-      if (error.code === 'INSUFFICIENT_FUNDS') {
-        setError('Insufficient funds to sign contract.');
-      } else if (error.code === 4001) {
-        setError('Transaction rejected. Please try again.');
-      } else {
-        setError(`Error: ${error.message || 'An error occurred while signing the contract.'}`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const toggleDashboard = () => {
     setIsRenter((prevState) => !prevState);
-    if (currentAccount) {
-      fetchUserContracts(currentAccount);
-    }
   };
-
-  const renderContractCard = (contract, index) => (
-    <div key={index} className="mb-4 p-4 bg-gray-100 rounded-lg shadow">
-      <div className="grid grid-cols-2 gap-4">
-        <p className="text-sm"><span className="font-semibold">Contract ID:</span> {contract.id}</p>
-        <p className="text-sm"><span className="font-semibold">Status:</span> {contract.isCompleted ? 'Completed' : (contract.isActive ? 'Active' : 'Pending')}</p>
-        <p className="text-sm"><span className="font-semibold">PG Owner:</span> {contract.pgOwner}</p>
-        <p className="text-sm"><span className="font-semibold">Renter:</span> {contract.renter}</p>
-        <p className="text-sm"><span className="font-semibold">Deposit:</span> {ethers.formatEther(contract.depositAmount)} ETH</p>
-        <p className="text-sm"><span className="font-semibold">Start:</span> {contract.startDate ? new Date(contract.startDate * 1000).toLocaleString() : 'Not started'}</p>
-        <p className="text-sm col-span-2"><span className="font-semibold">End:</span> {new Date(contract.endDate * 1000).toLocaleString()}</p>
-      </div>
-      
-      {(!isRenter || (isRenter && contract.renter.toLowerCase() === currentAccount?.toLowerCase())) && !contract.isActive && (
-        <div className="mt-4 flex space-x-4">
-          <button
-            onClick={() => signContract(contract.id, contract.depositAmount)}
-            disabled={isLoading}
-            className={`flex-1 py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white ${
-              isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
-            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
-          >
-            {isLoading ? 'Processing...' : 'Accept & Pay Deposit'}
-          </button>
-          <button
-            disabled={isLoading}
-            className={`flex-1 py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white ${
-              isLoading ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'
-            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500`}
-          >
-            Reject
-          </button>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
