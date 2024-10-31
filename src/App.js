@@ -21,25 +21,74 @@ const RentalPlatform = () => {
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [contractIdCounter, setContractIdCounter] = useState(1);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    checkIfWalletIsConnected();
-  }, []);
+  checkIfWalletIsConnected();
+}, []);
 
-  useEffect(() => {
-    const fetchContractIdCounter = async () => {
-      if (contract) {
-        try {
-          const nextId = await contract.nextContractId();
-          setContractIdCounter(Number(nextId));
-        } catch (error) {
-          console.error('Error fetching contract ID counter:', error);
-        }
+useEffect(() => {
+  const init = async () => {
+    if (window.ethereum && currentAccount) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        
+        const contractInstance = new ethers.Contract(
+          DAPDVS_ADDRESS,
+          DAPDVS_ABI,
+          signer
+        );
+
+        setContract(contractInstance);
+        setProvider(provider);
+        setSigner(signer);
+        setIsInitialized(true);
+
+        // Add event listeners
+        window.ethereum.on('accountsChanged', handleAccountsChanged);
+        window.ethereum.on('chainChanged', handleChainChanged);
+
+        return () => {
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+          window.ethereum.removeListener('chainChanged', handleChainChanged);
+        };
+      } catch (error) {
+        console.error('Initialization error:', error);
+        setError('Failed to initialize. Please refresh and try again.');
       }
-    };
+    }
+  };
 
-    fetchContractIdCounter();
-  }, [contract]);
+  init();
+}, [currentAccount]);
+
+// Add this useEffect to fetch contracts when contract is initialized
+useEffect(() => {
+  const loadContracts = async () => {
+    if (isInitialized && contract && currentAccount) {
+      console.log('Loading contracts for account:', currentAccount);
+      await fetchUserContracts(currentAccount);
+    }
+  };
+
+  loadContracts();
+}, [isInitialized, contract, currentAccount, isRenter]); // Added isRenter to refresh when switching roles
+
+// Add these event handlers
+const handleAccountsChanged = (accounts) => {
+  if (accounts.length > 0 && accounts[0] !== currentAccount) {
+    setCurrentAccount(accounts[0]);
+    window.location.reload();
+  } else if (accounts.length === 0) {
+    setCurrentAccount(null);
+    setIsLoggedIn(false);
+  }
+};
+
+const handleChainChanged = () => {
+  window.location.reload();
+};
 
   useEffect(() => {
     const setup = async () => {
@@ -142,63 +191,32 @@ const RentalPlatform = () => {
   };
 
   const initializeContract = async () => {
-    if (window.ethereum && currentAccount) {
-      try {
-        console.log('Initializing contract...');
-        
-        // First, get the network from window.ethereum
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        console.log('Current chainId:', chainId);
+  if (window.ethereum && currentAccount) {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      setProvider(provider);
 
-        if (chainId !== '0xaa36a7') { // Sepolia chainId
-          console.log('Not on Sepolia, attempting to switch...');
-          try {
-            await window.ethereum.request({
-              method: 'wallet_switchEthereumChain',
-              params: [{ chainId: '0xaa36a7' }],
-            });
-          } catch (switchError) {
-            console.error('Error switching network:', switchError);
-            throw switchError;
-          }
-        }
+      const signer = await provider.getSigner();
+      setSigner(signer);
 
-        // Create provider
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        console.log('Provider created');
-        setProvider(provider);
+      const contractInstance = new ethers.Contract(
+        DAPDVS_ADDRESS,
+        DAPDVS_ABI,
+        signer
+      );
 
-        // Get signer
-        const signer = await provider.getSigner();
-        console.log('Signer obtained:', await signer.getAddress());
-        setSigner(signer);
+      setContract(contractInstance);
+      
+      // Fetch contract ID counter
+      const nextId = await contractInstance.nextContractId();
+      setContractIdCounter(Number(nextId));
 
-        // Initialize contract with signer
-        const contractInstance = new ethers.Contract(
-          DAPDVS_ADDRESS,
-          DAPDVS_ABI,
-          signer
-        );
-        
-        // Verify contract connection
-        try {
-          const nextId = await contractInstance.nextContractId();
-          console.log('Contract connected successfully, nextId:', nextId.toString());
-          setContract(contractInstance);
-        } catch (contractError) {
-          console.error('Contract call failed:', contractError);
-          throw new Error('Contract initialization failed: ' + contractError.message);
-        }
-      } catch (error) {
-        console.error('Detailed initialization error:', error);
-        setError(`Contract initialization failed: ${error.message}`);
-        throw error;
-      }
-    } else {
-      console.error('Ethereum object or account not available');
-      setError('MetaMask not available or account not connected');
+    } catch (error) {
+      console.error('Contract initialization error:', error);
+      setError('Failed to initialize contract. Please refresh and try again.');
     }
-  };
+  }
+};
 
 const signContract = async (contractId, depositAmount) => {
   try {
@@ -206,135 +224,137 @@ const signContract = async (contractId, depositAmount) => {
     setError(null);
 
     if (!contract) {
-      throw new Error('Contract not initialized. Please refresh the page.');
+      throw new Error('Contract not initialized');
     }
-
-    // Get contract details first to verify it's not already active
-    const contractDetails = await contract.getContractDetails(contractId);
-    if (contractDetails.isActive) {
-      throw new Error('This contract is already active.');
-    }
-
-    console.log('Signing contract:', contractId, 'with deposit:', depositAmount.toString());
 
     const tx = await contract.signContract(contractId, {
       value: depositAmount,
-      gasLimit: 300000 // Increased gas limit for better success rate
+      gasLimit: 300000 // Increased gas limit
     });
-    
-    console.log('Sign transaction sent:', tx.hash);
-    
-    // Wait for transaction confirmation
+
     await tx.wait();
-    console.log('Transaction confirmed');
     
     // Refresh contracts after successful signing
     await fetchUserContracts(currentAccount);
-    
     setError(null);
+
   } catch (error) {
     console.error('Error signing contract:', error);
     if (error.code === 'INSUFFICIENT_FUNDS') {
       setError('Insufficient funds to sign contract.');
     } else if (error.code === 4001) {
       setError('Transaction rejected. Please try again.');
-    } else if (error.message.includes('execution reverted')) {
-      setError('Transaction failed. The contract may already be active or invalid.');
     } else {
-      setError(`Error: ${error.message || 'An error occurred while signing the contract.'}`);
+      setError(`Error: ${error.message}`);
     }
   } finally {
     setLoadingContractId(null);
   }
 };
-
+  
   const fetchUserContracts = async (userAddress) => {
+  if (!contract || !userAddress || !isInitialized) {
+    console.log('Contract not ready for fetching');
+    return;
+  }
+
   try {
-    if (!contract) {
-      console.error('Contract not initialized');
-      return;
-    }
-
+    console.log('Fetching contracts for:', userAddress);
     const result = await contract.getUserContracts(userAddress);
-    
-    const transformContract = (contractData) => ({
-      id: Number(contractData.contractId || 0), // fallback to index if needed
-      pgOwner: contractData.pgOwner,
-      renter: contractData.renter,
-      depositAmount: contractData.depositAmount,
-      startDate: Number(contractData.startDate),
-      endDate: Number(contractData.endDate),
-      isActive: contractData.isActive,
-      isCompleted: contractData.isCompleted,
-      validatorRequested: contractData.validatorRequested,
-      validator: contractData.validator
+    console.log('Contract result:', result);
+
+    // Get contract counter
+    const nextId = await contract.nextContractId();
+    let currentId = 1; // Start from 1
+
+    // Transform active contracts
+    const transformedActive = result[0].map((c, index) => ({
+      id: currentId + index,
+      pgOwner: c.pgOwner,
+      renter: c.renter,
+      depositAmount: c.depositAmount,
+      startDate: Number(c.startDate),
+      endDate: Number(c.endDate),
+      isActive: c.isActive,
+      isCompleted: c.isCompleted,
+      validatorRequested: c.validatorRequested,
+      validator: c.validator
+    }));
+
+    // Transform completed contracts
+    const transformedCompleted = result[1].map((c, index) => ({
+      id: currentId + transformedActive.length + index,
+      pgOwner: c.pgOwner,
+      renter: c.renter,
+      depositAmount: c.depositAmount,
+      startDate: Number(c.startDate),
+      endDate: Number(c.endDate),
+      isActive: c.isActive,
+      isCompleted: c.isCompleted,
+      validatorRequested: c.validatorRequested,
+      validator: c.validator
+    }));
+
+    console.log('Transformed active:', transformedActive);
+    console.log('Transformed completed:', transformedCompleted);
+
+    // Filter based on role
+    const filteredActive = transformedActive.filter(c => {
+      const isCorrectRole = isRenter 
+        ? c.renter.toLowerCase() === currentAccount.toLowerCase()
+        : c.pgOwner.toLowerCase() === currentAccount.toLowerCase();
+      return c.isActive && !c.isCompleted && isCorrectRole;
     });
 
-    // Transform active and completed contracts
-    const activeContracts = result[0].map(transformContract);
-    const completedContracts = result[1].map(transformContract);
-
-    // Filter contracts based on user role
-    const filteredActive = activeContracts.filter(c => {
-      const userAddress = currentAccount?.toLowerCase();
-      if (isRenter) {
-        return c.renter.toLowerCase() === userAddress && c.isActive && !c.isCompleted;
-      } else {
-        return c.pgOwner.toLowerCase() === userAddress && c.isActive && !c.isCompleted;
-      }
-    });
-
-    const filteredCompleted = completedContracts.filter(c => {
-      const userAddress = currentAccount?.toLowerCase();
-      return isRenter ? 
-        c.renter.toLowerCase() === userAddress :
-        c.pgOwner.toLowerCase() === userAddress;
-    });
+    console.log('Filtered active contracts:', filteredActive);
 
     setActiveContracts(filteredActive);
-    setCompletedContracts(filteredCompleted);
-    setAllContracts([...filteredActive, ...filteredCompleted]);
+    setCompletedContracts(transformedCompleted);
+    setAllContracts([...transformedActive, ...transformedCompleted]);
+
   } catch (error) {
-    console.error('Error fetching user contracts:', error);
-    setError('An error occurred while fetching your contracts.');
+    console.error('Error fetching contracts:', error);
+    setError('Failed to fetch contracts: ' + error.message);
   }
 };
 
+  
 // Update the renderContractCard function
-const renderContractCard = (contract, index) => {
+const renderContractCard = (contract) => {
+  if (!contract) return null;
+  console.log('Rendering contract:', contract);
+  
   const canSign = !contract.isActive && 
                  isRenter && 
                  contract.renter.toLowerCase() === currentAccount?.toLowerCase();
 
   const isLoading = loadingContractId === contract.id;
-  const status = contract.isCompleted ? 'Completed' : 
-                 (contract.isActive ? 'Active' : 'Pending');
 
   return (
-    <div key={index} className="mb-4 p-4 bg-gray-100 rounded-lg shadow">
+    <div key={contract.id} className="mb-4 p-4 bg-gray-100 rounded-lg shadow">
       <div className="grid grid-cols-2 gap-4">
         <p className="text-sm">
           <span className="font-semibold">Contract ID:</span> {contract.id}
         </p>
         <p className="text-sm">
-          <span className="font-semibold">Status:</span> {status}
+          <span className="font-semibold">Status:</span> 
+          {contract.isCompleted ? 'Completed' : (contract.isActive ? 'Active' : 'Pending')}
         </p>
         <p className="text-sm">
-          <span className="font-semibold">PG Owner:</span> {contract.pgOwner}
+          <span className="font-semibold">PG Owner:</span> 
+          {`${contract.pgOwner.slice(0,6)}...${contract.pgOwner.slice(-4)}`}
         </p>
         <p className="text-sm">
-          <span className="font-semibold">Renter:</span> {contract.renter}
+          <span className="font-semibold">Renter:</span> 
+          {`${contract.renter.slice(0,6)}...${contract.renter.slice(-4)}`}
         </p>
         <p className="text-sm">
-          <span className="font-semibold">Deposit:</span> {ethers.formatEther(contract.depositAmount)} ETH
+          <span className="font-semibold">Deposit:</span> 
+          {ethers.formatEther(contract.depositAmount)} ETH
         </p>
         <p className="text-sm">
           <span className="font-semibold">Start:</span> 
           {contract.startDate ? new Date(contract.startDate * 1000).toLocaleString() : 'Not started'}
-        </p>
-        <p className="text-sm col-span-2">
-          <span className="font-semibold">End:</span> 
-          {contract.endDate ? new Date(contract.endDate * 1000).toLocaleString() : 'Not set'}
         </p>
       </div>
       
@@ -354,7 +374,7 @@ const renderContractCard = (contract, index) => {
     </div>
   );
 };
-
+  
   const createContract = async () => {
     try {
       setIsLoading(true);
@@ -544,7 +564,11 @@ const renderContractCard = (contract, index) => {
                 <h2 className="text-xl font-semibold mb-4">Active Contracts</h2>
                 {activeContracts.length > 0 ? (
                   <div className="space-y-4">
-                    {activeContracts.map((contract, index) => renderContractCard(contract, index))}
+                    {activeContracts.map((contract) => (
+                      <div key={contract.id}>
+                        {renderContractCard(contract)}
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="text-gray-500">No active contracts found.</p>
