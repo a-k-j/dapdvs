@@ -39,19 +39,6 @@
 				"internalType": "uint256",
 				"name": "contractId",
 				"type": "uint256"
-			}
-		],
-		"name": "ContractAutoCompleted",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "uint256",
-				"name": "contractId",
-				"type": "uint256"
 			},
 			{
 				"indexed": false,
@@ -89,9 +76,28 @@
 				"internalType": "address",
 				"name": "renter",
 				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "validator",
+				"type": "address"
 			}
 		],
 		"name": "ContractCreated",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "contractId",
+				"type": "uint256"
+			}
+		],
+		"name": "ContractExpired",
 		"type": "event"
 	},
 	{
@@ -130,13 +136,25 @@
 		"anonymous": false,
 		"inputs": [
 			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "contractId",
+				"type": "uint256"
+			},
+			{
 				"indexed": false,
 				"internalType": "address",
 				"name": "validator",
 				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "fee",
+				"type": "uint256"
 			}
 		],
-		"name": "ValidatorRegistered",
+		"name": "ValidatorPaid",
 		"type": "event"
 	},
 	{
@@ -159,19 +177,6 @@
 		"type": "event"
 	},
 	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "validator",
-				"type": "address"
-			}
-		],
-		"name": "ValidatorUnregistered",
-		"type": "event"
-	},
-	{
 		"inputs": [
 			{
 				"internalType": "uint256",
@@ -180,19 +185,6 @@
 			}
 		],
 		"name": "autoCompleteContract",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "_contractId",
-				"type": "uint256"
-			}
-		],
-		"name": "checkAndCompleteExpiredContract",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -223,8 +215,18 @@
 				"type": "address"
 			},
 			{
+				"internalType": "address payable",
+				"name": "_validator",
+				"type": "address"
+			},
+			{
 				"internalType": "uint256",
 				"name": "_depositAmount",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_validatorFee",
 				"type": "uint256"
 			},
 			{
@@ -234,6 +236,19 @@
 			}
 		],
 		"name": "createContract",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_contractId",
+				"type": "uint256"
+			}
+		],
+		"name": "expireContract",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -259,8 +274,18 @@
 				"type": "address"
 			},
 			{
+				"internalType": "address",
+				"name": "validator",
+				"type": "address"
+			},
+			{
 				"internalType": "uint256",
 				"name": "depositAmount",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "validatorFee",
 				"type": "uint256"
 			},
 			{
@@ -274,9 +299,9 @@
 				"type": "uint256"
 			},
 			{
-				"internalType": "bool",
-				"name": "isActive",
-				"type": "bool"
+				"internalType": "enum DAPDVS.ContractState",
+				"name": "state",
+				"type": "uint8"
 			},
 			{
 				"internalType": "bool",
@@ -284,13 +309,8 @@
 				"type": "bool"
 			},
 			{
-				"internalType": "address",
-				"name": "validator",
-				"type": "address"
-			},
-			{
 				"internalType": "bool",
-				"name": "isCompleted",
+				"name": "validatorPaid",
 				"type": "bool"
 			}
 		],
@@ -301,11 +321,11 @@
 		"inputs": [
 			{
 				"internalType": "address",
-				"name": "_user",
+				"name": "_pgOwner",
 				"type": "address"
 			}
 		],
-		"name": "getUserContracts",
+		"name": "getPgOwnerContracts",
 		"outputs": [
 			{
 				"components": [
@@ -326,6 +346,11 @@
 					},
 					{
 						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
 						"name": "startDate",
 						"type": "uint256"
 					},
@@ -335,9 +360,9 @@
 						"type": "uint256"
 					},
 					{
-						"internalType": "bool",
-						"name": "isActive",
-						"type": "bool"
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
 					},
 					{
 						"internalType": "bool",
@@ -345,13 +370,70 @@
 						"type": "bool"
 					},
 					{
-						"internalType": "address",
+						"internalType": "address payable",
 						"name": "validator",
 						"type": "address"
 					},
 					{
 						"internalType": "bool",
-						"name": "isCompleted",
+						"name": "validatorPaid",
+						"type": "bool"
+					}
+				],
+				"internalType": "struct DAPDVS.RentalContract[]",
+				"name": "pendingContracts",
+				"type": "tuple[]"
+			},
+			{
+				"components": [
+					{
+						"internalType": "address payable",
+						"name": "pgOwner",
+						"type": "address"
+					},
+					{
+						"internalType": "address payable",
+						"name": "renter",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "depositAmount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "startDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "endDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorRequested",
+						"type": "bool"
+					},
+					{
+						"internalType": "address payable",
+						"name": "validator",
+						"type": "address"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorPaid",
 						"type": "bool"
 					}
 				],
@@ -378,6 +460,11 @@
 					},
 					{
 						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
 						"name": "startDate",
 						"type": "uint256"
 					},
@@ -387,9 +474,9 @@
 						"type": "uint256"
 					},
 					{
-						"internalType": "bool",
-						"name": "isActive",
-						"type": "bool"
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
 					},
 					{
 						"internalType": "bool",
@@ -397,13 +484,198 @@
 						"type": "bool"
 					},
 					{
-						"internalType": "address",
+						"internalType": "address payable",
 						"name": "validator",
 						"type": "address"
 					},
 					{
 						"internalType": "bool",
-						"name": "isCompleted",
+						"name": "validatorPaid",
+						"type": "bool"
+					}
+				],
+				"internalType": "struct DAPDVS.RentalContract[]",
+				"name": "completedContracts",
+				"type": "tuple[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_renter",
+				"type": "address"
+			}
+		],
+		"name": "getRenterContracts",
+		"outputs": [
+			{
+				"components": [
+					{
+						"internalType": "address payable",
+						"name": "pgOwner",
+						"type": "address"
+					},
+					{
+						"internalType": "address payable",
+						"name": "renter",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "depositAmount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "startDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "endDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorRequested",
+						"type": "bool"
+					},
+					{
+						"internalType": "address payable",
+						"name": "validator",
+						"type": "address"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorPaid",
+						"type": "bool"
+					}
+				],
+				"internalType": "struct DAPDVS.RentalContract[]",
+				"name": "pendingContracts",
+				"type": "tuple[]"
+			},
+			{
+				"components": [
+					{
+						"internalType": "address payable",
+						"name": "pgOwner",
+						"type": "address"
+					},
+					{
+						"internalType": "address payable",
+						"name": "renter",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "depositAmount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "startDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "endDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorRequested",
+						"type": "bool"
+					},
+					{
+						"internalType": "address payable",
+						"name": "validator",
+						"type": "address"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorPaid",
+						"type": "bool"
+					}
+				],
+				"internalType": "struct DAPDVS.RentalContract[]",
+				"name": "activeContracts",
+				"type": "tuple[]"
+			},
+			{
+				"components": [
+					{
+						"internalType": "address payable",
+						"name": "pgOwner",
+						"type": "address"
+					},
+					{
+						"internalType": "address payable",
+						"name": "renter",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "depositAmount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "startDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "endDate",
+						"type": "uint256"
+					},
+					{
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorRequested",
+						"type": "bool"
+					},
+					{
+						"internalType": "address payable",
+						"name": "validator",
+						"type": "address"
+					},
+					{
+						"internalType": "bool",
+						"name": "validatorPaid",
 						"type": "bool"
 					}
 				],
@@ -444,6 +716,11 @@
 					},
 					{
 						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
 						"name": "startDate",
 						"type": "uint256"
 					},
@@ -453,9 +730,9 @@
 						"type": "uint256"
 					},
 					{
-						"internalType": "bool",
-						"name": "isActive",
-						"type": "bool"
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
 					},
 					{
 						"internalType": "bool",
@@ -463,18 +740,18 @@
 						"type": "bool"
 					},
 					{
-						"internalType": "address",
+						"internalType": "address payable",
 						"name": "validator",
 						"type": "address"
 					},
 					{
 						"internalType": "bool",
-						"name": "isCompleted",
+						"name": "validatorPaid",
 						"type": "bool"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
-				"name": "activeContracts",
+				"name": "pendingValidationContracts",
 				"type": "tuple[]"
 			},
 			{
@@ -496,6 +773,11 @@
 					},
 					{
 						"internalType": "uint256",
+						"name": "validatorFee",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
 						"name": "startDate",
 						"type": "uint256"
 					},
@@ -505,9 +787,9 @@
 						"type": "uint256"
 					},
 					{
-						"internalType": "bool",
-						"name": "isActive",
-						"type": "bool"
+						"internalType": "enum DAPDVS.ContractState",
+						"name": "state",
+						"type": "uint8"
 					},
 					{
 						"internalType": "bool",
@@ -515,18 +797,18 @@
 						"type": "bool"
 					},
 					{
-						"internalType": "address",
+						"internalType": "address payable",
 						"name": "validator",
 						"type": "address"
 					},
 					{
 						"internalType": "bool",
-						"name": "isCompleted",
+						"name": "validatorPaid",
 						"type": "bool"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
-				"name": "completedContracts",
+				"name": "completedValidationContracts",
 				"type": "tuple[]"
 			}
 		],
@@ -554,38 +836,6 @@
 				"internalType": "address",
 				"name": "",
 				"type": "address"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_validator",
-				"type": "address"
-			}
-		],
-		"name": "registerValidator",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"name": "registeredValidators",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
 			}
 		],
 		"stateMutability": "view",
@@ -625,6 +875,11 @@
 			},
 			{
 				"internalType": "uint256",
+				"name": "validatorFee",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
 				"name": "startDate",
 				"type": "uint256"
 			},
@@ -634,9 +889,9 @@
 				"type": "uint256"
 			},
 			{
-				"internalType": "bool",
-				"name": "isActive",
-				"type": "bool"
+				"internalType": "enum DAPDVS.ContractState",
+				"name": "state",
+				"type": "uint8"
 			},
 			{
 				"internalType": "bool",
@@ -644,13 +899,13 @@
 				"type": "bool"
 			},
 			{
-				"internalType": "address",
+				"internalType": "address payable",
 				"name": "validator",
 				"type": "address"
 			},
 			{
 				"internalType": "bool",
-				"name": "isCompleted",
+				"name": "validatorPaid",
 				"type": "bool"
 			}
 		],
@@ -663,16 +918,11 @@
 				"internalType": "uint256",
 				"name": "_contractId",
 				"type": "uint256"
-			},
-			{
-				"internalType": "address",
-				"name": "_validator",
-				"type": "address"
 			}
 		],
 		"name": "requestValidator",
 		"outputs": [],
-		"stateMutability": "nonpayable",
+		"stateMutability": "payable",
 		"type": "function"
 	},
 	{
@@ -697,19 +947,6 @@
 			}
 		],
 		"name": "transferOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_validator",
-				"type": "address"
-			}
-		],
-		"name": "unregisterValidator",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
