@@ -58,9 +58,11 @@ contract DAPDVS is ReentrancyGuard, Ownable {
 
     function signContract(uint256 _contractId) external payable nonReentrant {
         RentalContract storage rentalContract = rentalContracts[_contractId];
-        require(msg.sender == rentalContract.renter, "Only the renter can sign");
-        require(!rentalContract.isActive, "Contract already active");
+        require(msg.sender == rentalContract.renter, "Only the designated renter can sign");
+        require(!rentalContract.isActive, "Contract is already active");
+        require(!rentalContract.isCompleted, "Contract is already completed");
         require(msg.value == rentalContract.depositAmount, "Incorrect deposit amount");
+        require(block.timestamp <= rentalContract.endDate, "Contract has expired");
 
         rentalContract.isActive = true;
         rentalContract.startDate = block.timestamp;
