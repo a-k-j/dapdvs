@@ -1,200 +1,248 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("DAPDVS", function () {
-  let DAPDVS, dapdvs, owner, pgOwner, renter, validator, addr1;
-  let contractId;
+  let DAPDVS;
+  let dapdvs;
+  let owner;
+  let pgOwner;
+  let renter;
+  let validator;
+  let otherAccount;
+
+  const depositAmount = ethers.parseEther("1");
+  const validatorFee = ethers.parseEther("0.1");
+  const duration = 86400; // 1 day in seconds
 
   beforeEach(async function () {
+    [owner, pgOwner, renter, validator, otherAccount] = await ethers.getSigners();
     DAPDVS = await ethers.getContractFactory("DAPDVS");
-    [owner, pgOwner, renter, validator, addr1] = await ethers.getSigners();
-    
     dapdvs = await DAPDVS.deploy();
     await dapdvs.waitForDeployment();
-
-    await dapdvs.registerValidator(validator.address);
-
-    // Create a contract before each test
-    const depositAmount = ethers.parseEther("1");
-    const duration = 30 * 24 * 60 * 60; // 30 days
-
-    await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration);
-    contractId = 1;
-
-    // Sign the contract
-    await dapdvs.connect(renter).signContract(contractId, { value: depositAmount });
   });
 
-  describe("Contract Creation and Signing", function () {
-    it("Should create a rental contract", async function () {
-      const depositAmount = ethers.parseEther("1");
-      const duration = 30 * 24 * 60 * 60; // 30 days
+  describe("Contract Creation", function () {
+    it("Should create a new rental contract", async function () {
+      await dapdvs.connect(pgOwner).createContract(
+        renter.address,
+        validator.address,
+        depositAmount,
+        validatorFee,
+        duration
+      );
 
-      await expect(dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration))
-        .to.emit(dapdvs, "ContractCreated")
-        .withArgs(2, pgOwner.address, renter.address);
-    });
-
-    it("Should allow renter to sign the contract", async function () {
-      const depositAmount = ethers.parseEther("1");
-      const newContractId = 2;
-
-      // Create a new contract for this test
-      const duration = 30 * 24 * 60 * 60; // 30 days
-      await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration);
-
-      await expect(dapdvs.connect(renter).signContract(newContractId, { value: depositAmount }))
-        .to.emit(dapdvs, "ContractSigned")
-        .withArgs(newContractId);
-
-      const contract = await dapdvs.rentalContracts(newContractId);
-      expect(contract.isActive).to.be.true;
-    });
-  });
-
-  describe("Validator Operations", function () {
-    it("Should allow PG owner to request a validator", async function () {
-      await expect(dapdvs.connect(pgOwner).requestValidator(contractId, validator.address))
-        .to.emit(dapdvs, "ValidatorRequested")
-        .withArgs(contractId, validator.address);
-
+      const contractId = 1;
       const contract = await dapdvs.rentalContracts(contractId);
-      expect(contract.validatorRequested).to.be.true;
+
+      expect(contract.pgOwner).to.equal(pgOwner.address);
+      expect(contract.renter).to.equal(renter.address);
       expect(contract.validator).to.equal(validator.address);
+      expect(contract.depositAmount).to.equal(depositAmount);
+      expect(contract.validatorFee).to.equal(validatorFee);
+      expect(contract.state).to.equal(0); // PENDING
     });
 
-    it("Should not allow contract participant to be validator", async function () {
-      // Try to request PG owner as validator
-      await dapdvs.registerValidator(pgOwner.address);
+    it("Should not allow validator to be part of the contract", async function () {
       await expect(
-        dapdvs.connect(pgOwner).requestValidator(contractId, pgOwner.address)
+        dapdvs.connect(pgOwner).createContract(
+          validator.address, // renter same as validator
+          validator.address,
+          depositAmount,
+          validatorFee,
+          duration
+        )
       ).to.be.revertedWith("Validator cannot be part of the contract");
-
-      // Try to request renter as validator
-      await dapdvs.registerValidator(renter.address);
-      await expect(
-        dapdvs.connect(pgOwner).requestValidator(contractId, renter.address)
-      ).to.be.revertedWith("Validator cannot be part of the contract");
-    });
-
-    it("Should allow validator to complete the contract", async function () {
-      await dapdvs.connect(pgOwner).requestValidator(contractId, validator.address);
-
-      const damageAmount = ethers.parseEther("0.5");
-
-      await expect(dapdvs.connect(validator).completeContract(contractId, damageAmount))
-        .to.emit(dapdvs, "ContractCompleted");
-
-      const contract = await dapdvs.rentalContracts(contractId);
-      expect(contract.isActive).to.be.false;
-      expect(contract.isCompleted).to.be.true;
     });
   });
 
-  describe("Auto-completion", function () {
-    it("Should auto-complete contract after end date if no validator requested", async function () {
-      // Fast-forward time
-      await ethers.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]); // 31 days
-      await ethers.provider.send("evm_mine");
-
-      await expect(dapdvs.connect(addr1).autoCompleteContract(contractId))
-        .to.emit(dapdvs, "ContractCompleted");
-
-      const contract = await dapdvs.rentalContracts(contractId);
-      expect(contract.isActive).to.be.false;
-      expect(contract.isCompleted).to.be.true;
-    });
-
-    it("Should auto-complete contract with validator after end date", async function () {
-      await dapdvs.connect(pgOwner).requestValidator(contractId, validator.address);
-
-      // Fast-forward time
-      await ethers.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]); // 31 days
-      await ethers.provider.send("evm_mine");
-
-      await expect(dapdvs.connect(addr1).checkAndCompleteExpiredContract(contractId))
-        .to.emit(dapdvs, "ContractAutoCompleted");
-
-      const contract = await dapdvs.rentalContracts(contractId);
-      expect(contract.isActive).to.be.false;
-      expect(contract.isCompleted).to.be.true;
-    });
-  });
-
-  describe("Contract Retrieval Functions", function () {
+  describe("Contract Signing", function () {
     beforeEach(async function () {
-      // Create additional contracts for testing retrieval
-      const depositAmount = ethers.parseEther("1");
-      const duration = 30 * 24 * 60 * 60;
-
-      // Create another contract with same PG owner
-      await dapdvs.connect(pgOwner).createContract(addr1.address, depositAmount, duration);
-      await dapdvs.connect(addr1).signContract(2, { value: depositAmount });
-
-      // Create a contract and complete it
-      await dapdvs.connect(pgOwner).createContract(renter.address, depositAmount, duration);
-      await dapdvs.connect(renter).signContract(3, { value: depositAmount });
-      await dapdvs.connect(pgOwner).requestValidator(3, validator.address);
-      await dapdvs.connect(validator).completeContract(3, 0);
+      await dapdvs.connect(pgOwner).createContract(
+        renter.address,
+        validator.address,
+        depositAmount,
+        validatorFee,
+        duration
+      );
     });
 
-    it("Should retrieve all user contracts correctly", async function () {
-      const [activeContracts, completedContracts] = await dapdvs.getUserContracts(pgOwner.address);
-      
-      expect(activeContracts.length).to.equal(2); // Contracts 1 and 2
-      expect(completedContracts.length).to.equal(1); // Contract 3
-
-      // Verify active contracts
-      expect(activeContracts[0].renter).to.equal(renter.address);
-      expect(activeContracts[1].renter).to.equal(addr1.address);
-
-      // Verify completed contracts
-      expect(completedContracts[0].isCompleted).to.be.true;
-    });
-
-    it("Should retrieve all validator contracts correctly", async function () {
-      const [activeContracts, completedContracts] = await dapdvs.getValidatorContracts(validator.address);
-      
-      expect(activeContracts.length).to.equal(0);
-      expect(completedContracts.length).to.equal(1);
-
-      // Verify completed validator contracts
-      expect(completedContracts[0].isCompleted).to.be.true;
-      expect(completedContracts[0].validator).to.equal(validator.address);
-    });
-
-    it("Should not allow unregistered validator to fetch contracts", async function () {
+    it("Should allow renter to sign contract with correct deposit", async function () {
       await expect(
-        dapdvs.getValidatorContracts(addr1.address)
-      ).to.be.revertedWith("Not a registered validator");
+        dapdvs.connect(renter).signContract(1, { value: depositAmount })
+      ).to.not.be.reverted;
+
+      const contract = await dapdvs.rentalContracts(1);
+      expect(contract.state).to.equal(1); // ACTIVE
+    });
+
+    it("Should not allow signing with incorrect deposit amount", async function () {
+      const incorrectDeposit = ethers.parseEther("0.5");
+      await expect(
+        dapdvs.connect(renter).signContract(1, { value: incorrectDeposit })
+      ).to.be.revertedWith("Incorrect deposit amount");
     });
   });
 
-  describe("Validator Management", function () {
-    it("Should allow owner to register and unregister validators", async function () {
-      await expect(dapdvs.connect(owner).registerValidator(addr1.address))
-        .to.emit(dapdvs, "ValidatorRegistered")
-        .withArgs(addr1.address);
+  describe("Validator Request and Completion", function () {
+    beforeEach(async function () {
+      await dapdvs.connect(pgOwner).createContract(
+        renter.address,
+        validator.address,
+        depositAmount,
+        validatorFee,
+        duration
+      );
+      await dapdvs.connect(renter).signContract(1, { value: depositAmount });
+    });
 
-      expect(await dapdvs.registeredValidators(addr1.address)).to.be.true;
+    it("Should allow PG owner to request validator", async function () {
+      await expect(
+        dapdvs.connect(pgOwner).requestValidator(1, { value: validatorFee })
+      ).to.not.be.reverted;
 
-      await expect(dapdvs.connect(owner).unregisterValidator(addr1.address))
-        .to.emit(dapdvs, "ValidatorUnregistered")
-        .withArgs(addr1.address);
+      const contract = await dapdvs.rentalContracts(1);
+      expect(contract.validatorRequested).to.be.true;
+    });
 
-      expect(await dapdvs.registeredValidators(addr1.address)).to.be.false;
+    it("Should allow validator to complete contract with damage assessment", async function () {
+      await dapdvs.connect(pgOwner).requestValidator(1, { value: validatorFee });
+      const damageAmount = ethers.parseEther("0.3");
+
+      const initialPgOwnerBalance = await ethers.provider.getBalance(pgOwner.address);
+      const initialRenterBalance = await ethers.provider.getBalance(renter.address);
+      const initialValidatorBalance = await ethers.provider.getBalance(validator.address);
+
+      await dapdvs.connect(validator).completeContract(1, damageAmount);
+
+      const contract = await dapdvs.rentalContracts(1);
+      expect(contract.state).to.equal(3); // COMPLETED
+      expect(contract.validatorPaid).to.be.true;
+
+      // Check balances were updated correctly
+      const finalPgOwnerBalance = await ethers.provider.getBalance(pgOwner.address);
+      const finalRenterBalance = await ethers.provider.getBalance(renter.address);
+      const finalValidatorBalance = await ethers.provider.getBalance(validator.address);
+
+      expect(finalPgOwnerBalance).to.be.gt(initialPgOwnerBalance);
+      expect(finalRenterBalance).to.be.gt(initialRenterBalance);
+      expect(finalValidatorBalance).to.be.gt(initialValidatorBalance);
     });
   });
 
-  describe("Contract Details Retrieval", function () {
+  describe("Auto-Complete Contract", function () {
+    beforeEach(async function () {
+      await dapdvs.connect(pgOwner).createContract(
+        renter.address,
+        validator.address,
+        depositAmount,
+        validatorFee,
+        duration
+      );
+      await dapdvs.connect(renter).signContract(1, { value: depositAmount });
+    });
+
+    it("Should auto-complete contract after end date if validator not requested", async function () {
+      await time.increase(duration + 1);
+
+      const initialRenterBalance = await ethers.provider.getBalance(renter.address);
+      
+      await dapdvs.autoCompleteContract(1);
+
+      const contract = await dapdvs.rentalContracts(1);
+      expect(contract.state).to.equal(3); // COMPLETED
+
+      const finalRenterBalance = await ethers.provider.getBalance(renter.address);
+      expect(finalRenterBalance).to.be.gt(initialRenterBalance);
+    });
+
+    it("Should not auto-complete if validator was requested", async function () {
+      await dapdvs.connect(pgOwner).requestValidator(1, { value: validatorFee });
+      await time.increase(duration + 1);
+
+      await expect(
+        dapdvs.autoCompleteContract(1)
+      ).to.be.revertedWith("Validator has been requested");
+    });
+  });
+
+  describe("Contract Queries", function () {
+    beforeEach(async function () {
+      // Create multiple contracts with different states
+      await dapdvs.connect(pgOwner).createContract(
+        renter.address,
+        validator.address,
+        depositAmount,
+        validatorFee,
+        duration
+      );
+
+      await dapdvs.connect(pgOwner).createContract(
+        renter.address,
+        validator.address,
+        depositAmount,
+        validatorFee,
+        duration
+      );
+
+      await dapdvs.connect(renter).signContract(1, { value: depositAmount });
+    });
+
+    it("Should return correct PG owner contracts", async function () {
+      const [pending, active, completed] = await dapdvs.getPgOwnerContracts(pgOwner.address);
+      
+      expect(pending.length).to.equal(1);
+      expect(active.length).to.equal(1);
+      expect(completed.length).to.equal(0);
+    });
+
+    it("Should return correct renter contracts", async function () {
+      const [pending, active, completed] = await dapdvs.getRenterContracts(renter.address);
+      
+      expect(pending.length).to.equal(1);
+      expect(active.length).to.equal(1);
+      expect(completed.length).to.equal(0);
+    });
+
+    it("Should return correct validator contracts", async function () {
+      const [pending, completed] = await dapdvs.getValidatorContracts(validator.address);
+      
+      expect(pending.length).to.equal(0);
+      expect(completed.length).to.equal(0);
+    });
+  });
+
+  describe("Contract Details", function () {
     it("Should return correct contract details", async function () {
-      const details = await dapdvs.getContractDetails(contractId);
+      await dapdvs.connect(pgOwner).createContract(
+        renter.address,
+        validator.address,
+        depositAmount,
+        validatorFee,
+        duration
+      );
 
-      expect(details.pgOwner).to.equal(pgOwner.address);
-      expect(details.renter).to.equal(renter.address);
-      expect(details.isActive).to.be.true;
-      expect(details.validatorRequested).to.be.false;
-      expect(details.isCompleted).to.be.false;
+      const [
+        retPgOwner,
+        retRenter,
+        retValidator,
+        retDepositAmount,
+        retValidatorFee,
+        retStartDate,
+        retEndDate,
+        retState,
+        retValidatorRequested,
+        retValidatorPaid
+      ] = await dapdvs.getContractDetails(1);
+
+      expect(retPgOwner).to.equal(pgOwner.address);
+      expect(retRenter).to.equal(renter.address);
+      expect(retValidator).to.equal(validator.address);
+      expect(retDepositAmount).to.equal(depositAmount);
+      expect(retValidatorFee).to.equal(validatorFee);
+      expect(retState).to.equal(0); // PENDING
+      expect(retValidatorRequested).to.be.false;
+      expect(retValidatorPaid).to.be.false;
     });
   });
 });

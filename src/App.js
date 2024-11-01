@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DAPDVS_ABI from './ContractABI.json';
 const ethers = require("ethers");
-const DAPDVS_ADDRESS = '0x3D77F82437dE73f504126682C07Ae27f0682D8fd';
+const DAPDVS_ADDRESS = '0xa08E7C8d2C2e3618a83A1F9b4ac3ADD2947446C3';
 
 const RentalPlatform = () => {
   const [currentAccount, setCurrentAccount] = useState(null);
@@ -426,7 +426,7 @@ const createContract = async () => {
         });
 
         // Add 20% buffer to gas estimate
-        const gasLimit = ((gasEstimate * 120n)/100n);
+        const gasLimit = ((gasEstimate * 2n));
 
         const tx = await contract.signContract(contractId, {
             value: depositAmount,
