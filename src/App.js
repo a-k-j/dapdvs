@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DAPDVS_ABI from './ContractABI.json';
 const ethers = require("ethers");
-const DAPDVS_ADDRESS = '0xa08E7C8d2C2e3618a83A1F9b4ac3ADD2947446C3';
+const DAPDVS_ADDRESS = '0xD6A3d8C60944BC38ded01Ca3FD6AC7cE77953861';
 
 const RentalPlatform = () => {
   const [currentAccount, setCurrentAccount] = useState(null);
