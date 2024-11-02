@@ -1,649 +1,885 @@
-import React, { useState, useEffect } from 'react';
-import DAPDVS_ABI from './ContractABI.json';
+import React, { useState, useEffect } from "react";
+import { ClockIcon, WalletIcon, CheckCircleIcon, HomeIcon } from "lucide-react";
+import DAPDVS_ABI from "./ContractABI.json";
 const ethers = require("ethers");
-const DAPDVS_ADDRESS = '0xD6A3d8C60944BC38ded01Ca3FD6AC7cE77953861';
+const DAPDVS_ADDRESS = "0xD6A3d8C60944BC38ded01Ca3FD6AC7cE77953861";
+const EXPECTED_CHAIN_ID = 11155111n; // Sepolia testnet - adjust as needed
+const MINIMUM_GAS_LIMIT = 300000;
 
 const RentalPlatform = () => {
   const [currentAccount, setCurrentAccount] = useState(null);
-  const [isRenter, setIsRenter] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [activeContracts, setActiveContracts] = useState([]);
-  const [completedContracts, setCompletedContracts] = useState([]);
-  const [allContracts, setAllContracts] = useState([]);
-  const [error, setError] = useState(null);
-  const [depositAmount, setDepositAmount] = useState(0);
-  const [contractDuration, setContractDuration] = useState(0);
-  const [renterAddress, setRenterAddress] = useState('');
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [loadingContractId, setLoadingContractId] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [role, setRole] = useState("renter");
   const [contract, setContract] = useState(null);
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
-  const [contractIdCounter, setContractIdCounter] = useState(1);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingContractId, setLoadingContractId] = useState(null);
+  const [damageAmount, setDamageAmount] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
 
-  useEffect(() => {
-  checkIfWalletIsConnected();
-}, []);
+  // Contract states remain the same...
+  const [pendingContracts, setPendingContracts] = useState([]);
+  const [activeContracts, setActiveContracts] = useState([]);
+  const [completedContracts, setCompletedContracts] = useState([]);
+  const [validatorPendingContracts, setValidatorPendingContracts] = useState(
+    []
+  );
+  const [validatorCompletedContracts, setValidatorCompletedContracts] =
+    useState([]);
 
-useEffect(() => {
-  const init = async () => {
-    if (window.ethereum && currentAccount) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        
-        const contractInstance = new ethers.Contract(
-          DAPDVS_ADDRESS,
-          DAPDVS_ABI,
-          signer
-        );
+  // Form states remain the same...
+  const [newContract, setNewContract] = useState({
+    renter: "",
+    validator: "",
+    depositAmount: "",
+    validatorFee: "",
+    duration: "",
+  });
 
-        setContract(contractInstance);
-        setProvider(provider);
-        setSigner(signer);
-        setIsInitialized(true);
-
-        // Add event listeners
-        window.ethereum.on('accountsChanged', handleAccountsChanged);
-        window.ethereum.on('chainChanged', handleChainChanged);
-
-        return () => {
-          window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-          window.ethereum.removeListener('chainChanged', handleChainChanged);
-        };
-      } catch (error) {
-        console.error('Initialization error:', error);
-        setError('Failed to initialize. Please refresh and try again.');
-      }
-    }
-  };
-
-  init();
-}, [currentAccount]);
-
-// Add this useEffect to fetch contracts when contract is initialized
-useEffect(() => {
-  const loadContracts = async () => {
-    if (isInitialized && contract && currentAccount) {
-      console.log('Loading contracts for account:', currentAccount);
-      await fetchUserContracts(currentAccount);
-    }
-  };
-
-  loadContracts();
-}, [isInitialized, contract, currentAccount, isRenter]); // Added isRenter to refresh when switching roles
-
-// Add these event handlers
-const handleAccountsChanged = (accounts) => {
-  if (accounts.length > 0 && accounts[0] !== currentAccount) {
-    setCurrentAccount(accounts[0]);
-    window.location.reload();
-  } else if (accounts.length === 0) {
-    setCurrentAccount(null);
-    setIsLoggedIn(false);
-  }
-};
-
-const handleChainChanged = () => {
-  window.location.reload();
-};
-
-  useEffect(() => {
-    const setup = async () => {
-      try {
-        await initializeContract();
-        await fetchUserContracts(currentAccount);
-      } catch (error) {
-        console.error('Setup failed:', error);
-      }
-    };
-
-    if (currentAccount) {
-      setup();
-    }
-  }, [currentAccount]);
-
-  const checkIfWalletIsConnected = async () => {
-    try {
-      if (!window.ethereum) {
-        setError('Please install MetaMask to use this application.');
-        return;
-      }
-
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      
-      if (accounts.length > 0) {
-        const account = accounts[0];
-        setCurrentAccount(account);
-        setIsLoggedIn(true);
-      }
-    } catch (error) {
-      console.error('Error checking wallet connection:', error);
-      setError('An error occurred while checking your wallet connection.');
-    }
-  };
-
+  // Wallet connection functions
   const connectWallet = async () => {
-    if (isConnecting) {
-      setError('Connection request is already pending. Please check MetaMask.');
-      return;
-    }
-
     try {
-      setIsConnecting(true);
-      setError(null);
+      const { ethereum } = window;
 
-      if (!window.ethereum) {
-        setError('Please install MetaMask to use this application.');
+      if (!ethereum) {
+        setError("Please install MetaMask!");
         return;
       }
 
-      const accounts = await window.ethereum.request({ 
-        method: 'eth_requestAccounts' 
+      setIsConnecting(true);
+      const accounts = await ethereum.request({
+        method: "eth_requestAccounts",
       });
-      
-      // Switch to Sepolia network
-      try {
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: '0xaa36a7' }], // Sepolia chainId
-        });
-      } catch (switchError) {
-        if (switchError.code === 4902) {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: '0xaa36a7',
-              chainName: 'Sepolia Test Network',
-              nativeCurrency: {
-                name: 'SepoliaETH',
-                symbol: 'SEP',
-                decimals: 18
-              },
-              rpcUrls: [process.env.REACT_APP_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL],
-              blockExplorerUrls: ['https://sepolia.etherscan.io']
-            }]
-          });
-        } else {
-          throw switchError;
-        }
-      }
-      
-      if (accounts.length > 0) {
-        const account = accounts[0];
-        setCurrentAccount(account);
-        setIsLoggedIn(true);
-      }
+
+      setCurrentAccount(accounts[0]);
+      setError(null);
     } catch (error) {
-      console.error('Error connecting to MetaMask:', error);
-      if (error.code === -32002) {
-        setError('Please open MetaMask to complete the connection.');
-      } else if (error.code === 4001) {
-        setError('Connection rejected. Please try again.');
-      } else {
-        setError('An error occurred while connecting to MetaMask.');
-      }
+      console.error("Error connecting wallet:", error);
+      setError("Failed to connect wallet");
     } finally {
       setIsConnecting(false);
     }
   };
 
-  useEffect(() => {
-    if (isInitialized && contract && activeContracts.length > 0) {
-      // Check immediately when component mounts or contracts change
-      checkExpiredContracts();
-
-      // Set up interval to check every minute
-      const interval = setInterval(checkExpiredContracts, 60000);
-
-      // Cleanup interval on unmount
-      return () => clearInterval(interval);
-    }
-  }, [isInitialized, contract, activeContracts]);
-
-
-    const checkExpiredContracts = async () => {
-    if (!contract || !activeContracts) return;
-
+  const checkIfWalletIsConnected = async () => {
     try {
-      for (const rentalContract of activeContracts) {
-        const currentTime = Math.floor(Date.now() / 1000);
-        if (currentTime > rentalContract.endDate) {
-          console.log(`Checking expired contract ${rentalContract.id}`);
-          const tx = await contract.checkAndCompleteExpiredContract(rentalContract.id);
-          await tx.wait();
-          console.log(`Contract ${rentalContract.id} checked for expiration`);
-        }
+      const { ethereum } = window;
+
+      if (!ethereum) {
+        setError("Please install MetaMask!");
+        return;
       }
-      // Refresh contracts after checking
-      await fetchUserContracts(currentAccount);
+
+      const accounts = await ethereum.request({ method: "eth_accounts" });
+
+      if (accounts.length !== 0) {
+        const account = accounts[0];
+        setCurrentAccount(account);
+      }
     } catch (error) {
-      console.error('Error checking expired contracts:', error);
-      setError('Failed to check expired contracts: ' + error.message);
+      console.error(error);
+      setError("Error checking wallet connection");
     }
   };
 
-  const initializeContract = async () => {
-  if (window.ethereum && currentAccount) {
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      setProvider(provider);
-
-      const signer = await provider.getSigner();
-      setSigner(signer);
-
-      const contractInstance = new ethers.Contract(
-        DAPDVS_ADDRESS,
-        DAPDVS_ABI,
-        signer
-      );
-
-      setContract(contractInstance);
-      
-      // Fetch contract ID counter
-      const nextId = await contractInstance.nextContractId();
-      setContractIdCounter(Number(nextId));
-
-    } catch (error) {
-      console.error('Contract initialization error:', error);
-      setError('Failed to initialize contract. Please refresh and try again.');
+  const handleAccountsChanged = async (accounts) => {
+    if (accounts.length === 0) {
+      setError("Please connect to MetaMask.");
+      setCurrentAccount(null);
+      setIsInitialized(false);
+    } else if (accounts[0] !== currentAccount) {
+      setCurrentAccount(accounts[0]);
+      setPendingContracts([]);
+      setActiveContracts([]);
+      setCompletedContracts([]);
+      setValidatorPendingContracts([]);
+      setValidatorCompletedContracts([]);
     }
+  };
+
+  const handleChainChanged = () => {
+    window.location.reload();
+  };
+
+  // Initialize wallet connection
+  useEffect(() => {
+    checkIfWalletIsConnected();
+  }, []);
+
+  // Initialize contract connection
+  useEffect(() => {
+    const init = async () => {
+      if (window.ethereum && currentAccount) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const signer = await provider.getSigner();
+          const contractInstance = new ethers.Contract(
+            DAPDVS_ADDRESS,
+            DAPDVS_ABI,
+            signer
+          );
+
+          setContract(contractInstance);
+          setProvider(provider);
+          setSigner(signer);
+          setIsInitialized(true);
+
+          window.ethereum.on("accountsChanged", handleAccountsChanged);
+          window.ethereum.on("chainChanged", handleChainChanged);
+
+          return () => {
+            window.ethereum.removeListener(
+              "accountsChanged",
+              handleAccountsChanged
+            );
+            window.ethereum.removeListener("chainChanged", handleChainChanged);
+          };
+        } catch (error) {
+          console.error("Initialization error:", error);
+          setError("Failed to initialize contract");
+        }
+      }
+    };
+
+    init();
+  }, [currentAccount]);
+
+  // Fetch contracts based on role
+  useEffect(() => {
+    fetchContracts();
+  }, [isInitialized, contract, currentAccount, role]);
+
+  const formatContracts = (contracts) => {
+    if (!contracts) return [];
+    return contracts.map((c, index) => ({
+      id: index, // Add an id if not present in the contract
+      ...c,
+      depositAmount: ethers.formatEther(c.depositAmount.toString()),
+      validatorFee: ethers.formatEther(c.validatorFee.toString()),
+      startDate: Number(c.startDate),
+      endDate: Number(c.endDate),
+    }));
+  };
+
+  const validateContractInput = (contract) => {
+  if (!contract.renter || !ethers.isAddress(contract.renter)) {
+    throw new Error("Invalid renter address");
+  }
+  if (!contract.validator || !ethers.isAddress(contract.validator)) {
+    throw new Error("Invalid validator address");
+  }
+  if (!contract.depositAmount || isNaN(contract.depositAmount) || contract.depositAmount <= 0) {
+    throw new Error("Invalid deposit amount");
+  }
+  if (!contract.validatorFee || isNaN(contract.validatorFee) || contract.validatorFee <= 0) {
+    throw new Error("Invalid validator fee");
+  }
+  if (!contract.duration || isNaN(contract.duration) || contract.duration <= 0) {
+    throw new Error("Invalid duration");
   }
 };
+
+
+  const createContract = async (e) => {
+  if (e) {
+    e.preventDefault();
+  }
   
-  const fetchUserContracts = async (userAddress) => {
-    if (!contract || !userAddress || !isInitialized) {
-      console.log('Contract not ready for fetching');
-      return;
+  try {
+    setIsLoading(true);
+    setError(null);
+
+    // Validate input
+    validateContractInput(newContract);
+
+    const depositInWei = ethers.parseEther(newContract.depositAmount);
+    const feeInWei = ethers.parseEther(newContract.validatorFee);
+    // const durationInSeconds = Number(newContract.duration) * 24 * 60 * 60; // Convert days to seconds
+    const durationInSeconds = Number(newContract.duration); // Convert days to seconds
+
+    // Verify network
+    await verifyNetwork(provider);
+    
+    // Estimate gas before sending transaction
+    const gasEstimate = await contract.createContract.estimateGas(
+      newContract.renter,
+      newContract.validator,
+      depositInWei,
+      feeInWei,
+      durationInSeconds
+    );
+
+    // Add 100% buffer to gas estimate
+    const gasLimit = Math.floor(gasEstimate.toString() * 2);
+
+    console.log("Creating contract with parameters:", {
+      renter: newContract.renter,
+      validator: newContract.validator,
+      depositAmount: depositInWei.toString(),
+      validatorFee: feeInWei.toString(),
+      duration: durationInSeconds,
+      gasLimit
+    });
+
+    const tx = await contract.createContract(
+      newContract.renter,
+      newContract.validator,
+      depositInWei,
+      feeInWei,
+      durationInSeconds,
+      { gasLimit }
+    );
+
+    console.log("Transaction sent:", tx.hash);
+    
+    const receipt = await tx.wait();
+    console.log("Transaction receipt:", receipt);
+
+    if (receipt.status === 0) {
+      throw new Error("Transaction failed");
     }
 
-    try {
-      console.log('Fetching contracts for:', userAddress);
-      const result = await contract.getUserContracts(userAddress);
-      console.log('Contract result:', result);
+    // Reset form
+    setNewContract({
+      renter: "",
+      validator: "",
+      depositAmount: "",
+      validatorFee: "",
+      duration: "",
+    });
 
-      // Get contract counter
-      const nextId = await contract.nextContractId();
-      let currentId = 1;
+    // Refresh the contracts list
+    await fetchContracts();
 
-      // Transform active contracts
-      const transformedActive = result[0].map((c, index) => ({
-        id: currentId + index,
-        pgOwner: c.pgOwner,
-        renter: c.renter,
-        depositAmount: c.depositAmount,
-        startDate: Number(c.startDate),
-        endDate: Number(c.endDate),
-        isActive: c.isActive,
-        isCompleted: c.isCompleted,
-        validatorRequested: c.validatorRequested,
-        validator: c.validator
-      }));
-
-      // Add time remaining information
-      const transformedActiveWithTime = transformedActive.map(contract => ({
-        ...contract,
-        timeRemaining: Math.max(0, contract.endDate - Math.floor(Date.now() / 1000))
-      }));
-
-      // Transform completed contracts
-      const transformedCompleted = result[1].map((c, index) => ({
-        id: currentId + transformedActive.length + index,
-        pgOwner: c.pgOwner,
-        renter: c.renter,
-        depositAmount: c.depositAmount,
-        startDate: Number(c.startDate),
-        endDate: Number(c.endDate),
-        isActive: c.isActive,
-        isCompleted: c.isCompleted,
-        validatorRequested: c.validatorRequested,
-        validator: c.validator
-      }));
-
-      // Filter based on role
-      const filteredActive = transformedActiveWithTime.filter(c => {
-        const isCorrectRole = isRenter 
-          ? c.renter.toLowerCase() === currentAccount.toLowerCase()
-          : c.pgOwner.toLowerCase() === currentAccount.toLowerCase();
-        return c.isActive && !c.isCompleted && isCorrectRole;
-      });
-
-      setActiveContracts(filteredActive);
-      setCompletedContracts(transformedCompleted);
-      setAllContracts([...transformedActiveWithTime, ...transformedCompleted]);
-
-    } catch (error) {
-      console.error('Error fetching contracts:', error);
-      setError('Failed to fetch contracts: ' + error.message);
+  } catch (error) {
+    console.error("Error creating contract:", error);
+    let errorMessage;
+    if (error.reason) {
+      errorMessage = `Failed to create contract: ${error.reason}`;
+    } else if (error.data?.message) {
+      errorMessage = `Failed to create contract: ${error.data.message}`;
+    } else if (error.message.includes("user rejected")) {
+      errorMessage = "Transaction was rejected by user";
+    } else if (error.message.includes("insufficient funds")) {
+      errorMessage = "Insufficient funds to complete transaction";
+    } else {
+      errorMessage = error.message || "Failed to create contract";
     }
-  };
+    setError(errorMessage);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  const toggleDashboard = () => {
-    setIsRenter((prevState) => !prevState);
-  };
+  const fetchContracts = async () => {
+    if (!isInitialized || !contract || !currentAccount) return;
 
-const createContract = async () => {
     try {
       setIsLoading(true);
-      setError(null);
-
-      if (!window.ethereum || !contract) {
-        setError('Please install MetaMask or reload the page.');
-        return;
+      if (role === "pgOwner") {
+        const result = await contract.getPgOwnerContracts(currentAccount);
+        setPendingContracts(formatContracts(result.pendingContracts));
+        setActiveContracts(formatContracts(result.activeContracts));
+        setCompletedContracts(formatContracts(result.completedContracts));
+      } else if (role === "renter") {
+        const result = await contract.getRenterContracts(currentAccount);
+        setPendingContracts(formatContracts(result.pendingContracts));
+        setActiveContracts(formatContracts(result.activeContracts));
+        setCompletedContracts(formatContracts(result.completedContracts));
+      } else if (role === "validator") {
+        const result = await contract.getValidatorContracts(currentAccount);
+        setValidatorPendingContracts(formatContracts(result.pendingValidationContracts));
+        setValidatorCompletedContracts(formatContracts(result.completedValidationContracts));
       }
-
-      // Normalize addresses for comparison
-      const normalizedCurrentAccount = currentAccount.toLowerCase();
-      const normalizedRenterAddress = renterAddress.toLowerCase();
-
-      // Add validation checks
-      if (normalizedCurrentAccount === normalizedRenterAddress) {
-        setError('PG Owner cannot create a contract with themselves as renter.');
-        return;
-      }
-
-      if (!ethers.isAddress(renterAddress)) {
-        setError('Please enter a valid renter address.');
-        return;
-      }
-
-      console.log('Contract Creation Details:', {
-        pgOwner: normalizedCurrentAccount,
-        renter: normalizedRenterAddress,
-        depositAmount: depositAmount,
-        duration: contractDuration
-      });
-
-      const depositInWei = ethers.parseEther(depositAmount.toString());
-      
-      const tx = await contract.createContract(
-        renterAddress,
-        depositInWei,
-        contractDuration,
-        {
-          gasLimit: 300000
-        }
-      );
-      
-      await tx.wait();
-      
-      // Reset form and refresh contracts
-      setDepositAmount(0);
-      setContractDuration(0);
-      setRenterAddress('');
-      await fetchUserContracts(currentAccount);
-      
     } catch (error) {
-      console.error('Error creating contract:', error);
-      setError(error.message || 'An error occurred while creating the contract.');
+      console.error("Error fetching contracts:", error);
+      setError("Failed to fetch contracts");
     } finally {
       setIsLoading(false);
     }
   };
 
   const signContract = async (contractId, depositAmount) => {
-    try {
-        setLoadingContractId(contractId);
+  try {
+    // Input validation
+    if (!contractId || !depositAmount) {
+      throw new Error("Invalid contract parameters");
+    }
+
+    setLoadingContractId(contractId);
+    setError(null);
+
+    // Convert deposit amount to Wei
+    const depositInWei = ethers.parseEther(depositAmount.toString());
+
+    // Perform all verifications
+    console.log("Starting contract verification process...");
+
+    // 1. Verify network connection
+    await verifyNetwork(provider);
+    console.log("Network verification successful");
+
+    // 2. Verify user balance
+    await verifyBalance(provider, currentAccount, depositInWei);
+    console.log("Balance verification successful");
+
+    // 3. Verify contract state
+    await verifyContractBeforeSigning(contractId);
+    console.log("Contract state verification successful");
+
+    // 4. Estimate gas to ensure transaction won't fail
+    const gasEstimate = await contract.signContract.estimateGas(contractId);
+
+    // Add 20% buffer to gas estimate
+    const gasLimit = (gasEstimate*2n);
+
+    // Ensure minimum gas limit
+    const finalGasLimit = gasLimit < MINIMUM_GAS_LIMIT
+      ? MINIMUM_GAS_LIMIT 
+      : gasLimit.toString();
+
+    console.log("Estimated gas limit:", finalGasLimit);
+
+    // Prepare transaction with all verified parameters
+    const tx = await contract.signContract(contractId, {
+      value: depositInWei,
+      gasLimit: finalGasLimit
+    });
+
+    console.log("Transaction sent:", tx.hash);
+
+    // Wait for transaction confirmation
+    const receipt = await tx.wait();
+    console.log("Transaction confirmed:", receipt);
+
+    // Verify transaction success
+    if (receipt.status === 0) {
+      throw new Error("Transaction failed");
+    }
+
+    // Refresh contracts list
+    await fetchContracts();
+
+    return receipt;
+  } catch (error) {
+    console.error("Error in signContract:", error);
+    
+    // Enhanced error handling with specific messages
+    let errorMessage;
+    if (error.reason) {
+      errorMessage = `Contract signing failed: ${error.reason}`;
+    } else if (error.data?.message) {
+      errorMessage = `Contract signing failed: ${error.data.message}`;
+    } else if (error.message.includes("user rejected")) {
+      errorMessage = "Transaction was rejected by user";
+    } else if (error.message.includes("insufficient funds")) {
+      errorMessage = "Insufficient funds to complete transaction";
+    } else {
+      errorMessage = error.message || "Failed to sign contract";
+    }
+
+    setError(errorMessage);
+    throw error;
+  } finally {
+    setLoadingContractId(null);
+  }
+};
+
+// Event Listeners for network and account changes
+const setupEventListeners = () => {
+  if (window.ethereum) {
+    window.ethereum.on('chainChanged', (chainId) => {
+      console.log('Network changed to:', chainId);
+      // Convert chainId to decimal for comparison
+      const decimalChainId = parseInt(chainId, 16);
+      if (decimalChainId !== EXPECTED_CHAIN_ID) {
+        setError(`Please connect to the correct network. Expected chain ID: ${EXPECTED_CHAIN_ID}`);
+      } else {
         setError(null);
+      }
+    });
 
-        if (!contract) {
-            throw new Error('Contract not initialized');
-        }
+    window.ethereum.on('accountsChanged', (accounts) => {
+      if (accounts.length === 0) {
+        setError('Please connect your wallet');
+        setCurrentAccount(null);
+      } else {
+        setCurrentAccount(accounts[0]);
+        setError(null);
+      }
+    });
+  }
+};
 
-        // Get contract details
-        const contractDetails = await contract.getContractDetails(contractId);
-        const normalizedRenter = contractDetails.renter.toLowerCase();
-        const normalizedCurrentAccount = currentAccount.toLowerCase();
-        
-        console.log('Contract Signing Details:', {
-            contractId,
-            designatedRenter: normalizedRenter,
-            currentWallet: normalizedCurrentAccount,
-            isMatch: normalizedRenter === normalizedCurrentAccount,
-            depositAmount: depositAmount.toString()
-        });
-
-        if (normalizedRenter !== normalizedCurrentAccount) {
-            throw new Error(`Address mismatch. Contract is for ${contractDetails.renter}`);
-        }
-
-        // Check if contract is already active
-        if (contractDetails.isActive) {
-            throw new Error('Contract is already active');
-        }
-
-        // Check if contract has expired
-        // const currentTime = Math.floor(Date.now() / 1000);
-        // if (currentTime > Number(contractDetails.endDate)) {
-        //     throw new Error('Contract has expired');
-        // }
-
-        // Estimate gas first
-        const gasEstimate = await contract.signContract.estimateGas(contractId, {
-            value: depositAmount
-        });
-
-        // Add 20% buffer to gas estimate
-        const gasLimit = ((gasEstimate * 2n));
-
-        const tx = await contract.signContract(contractId, {
-            value: depositAmount,
-            gasLimit: gasLimit
-        });
-
-        await tx.wait();
-        await fetchUserContracts(currentAccount);
-        
-    } catch (error) {
-        console.error('Error signing contract:', error);
-        if (error.code === 'INSUFFICIENT_FUNDS') {
-            setError('Insufficient funds to sign contract.');
-        } else if (error.code === 4001) {
-            setError('Transaction rejected. Please try again.');
-        } else if (error.message.includes('user rejected')) {
-            setError('Transaction was rejected. Please try again.');
-        } else {
-            setError(error.message || 'Error signing contract. Please ensure you have enough ETH for deposit and gas.');
-        }
-    } finally {
-        setLoadingContractId(null);
+// Usage in useEffect
+useEffect(() => {
+  setupEventListeners();
+  return () => {
+    // Cleanup listeners on component unmount
+    if (window.ethereum) {
+      window.ethereum.removeAllListeners('chainChanged');
+      window.ethereum.removeAllListeners('accountsChanged');
     }
   };
-  
-  const renderContractCard = (contract) => {
-    if (!contract) return null;
-    
-    const canSign = !contract.isActive && 
-                     isRenter && 
-                     contract.renter.toLowerCase() === currentAccount?.toLowerCase();
+}, []);
 
+const verifyContractBeforeSigning = async (contractId) => {
+  try {
+
+    if (!contract) {
+      throw new Error("Contract instance not initialized");
+    }
+
+    // Get contract state
+    const contractData = await contract.getContractDetails(contractId);
+    
+    // Verify contract exists and is in valid state
+    if (!contractData) {
+      throw new Error("Contract does not exist");
+    }
+
+    // // Check if contract is in pending state (adjust based on your contract's state enum)
+    // if (contractData.state !== 0) { // Assuming 0 is PENDING state
+    //   throw new Error("Contract is not in pending state");
+    // }
+
+    // Check if contract is expired
+    // const currentTime = Math.floor(Date.now() / 1000);
+    // if (currentTime > Number(contractData.endDate)) {
+    //   throw new Error("Contract has expired");
+    // }
+
+    return true;
+  } catch (error) {
+    console.error("Contract verification failed:", error);
+    throw new Error(`Contract verification failed: ${error.message}`);
+  }
+};
+
+// Helper function to verify network
+const verifyNetwork = async (provider) => {
+  const network = await provider.getNetwork();
+  console.log('Decimal chain ID:', network.chainId);
+  if (network.chainId !== EXPECTED_CHAIN_ID) {
+    throw new Error(`Please connect to the correct network. Expected chain ID: ${EXPECTED_CHAIN_ID}`);
+  }
+  return true;
+};
+
+// Helper function to verify user balance
+const verifyBalance = async (provider, account, requiredAmount) => {
+  const balance = await provider.getBalance(account);
+  if (balance < requiredAmount) {
+    throw new Error(`Insufficient balance. Required: ${ethers.formatEther(requiredAmount)} ETH`);
+  }
+  return true;
+};
+
+  const requestValidator = async (contractId, validatorFee) => {
+    try {
+      setLoadingContractId(contractId);
+      setError(null);
+
+      const tx = await contract.requestValidator(contractId, {
+        value: ethers.parseEther(validatorFee.toString()),
+        gasLimit: 300000,
+      });
+
+      await tx.wait();
+    } catch (error) {
+      console.error("Error requesting validator:", error);
+      setError(error.message);
+    } finally {
+      setLoadingContractId(null);
+    }
+  };
+
+  const completeContract = async (contractId, damageAmount) => {
+    try {
+      setLoadingContractId(contractId);
+      setError(null);
+
+      const tx = await contract.completeContract(
+        contractId,
+        ethers.parseEther(damageAmount.toString()),
+        { gasLimit: 500000 }
+      );
+
+      await tx.wait();
+    } catch (error) {
+      console.error("Error completing contract:", error);
+      setError(error.message);
+    } finally {
+      setLoadingContractId(null);
+    }
+  };
+
+  const renderContractCard = (contract, type) => {
     const isLoading = loadingContractId === contract.id;
     const currentTime = Math.floor(Date.now() / 1000);
-    const isExpired = currentTime > contract.endDate;
+    const timeRemaining = contract.endDate - currentTime;
+    const canRequestValidator = timeRemaining <= 86400; // 24 hours before end
 
     return (
-      <div key={contract.id} className="mb-4 p-4 bg-white rounded-lg shadow">
+      <div key={contract.id} className="mb-4 p-6 bg-white rounded-lg shadow-md">
         <div className="grid grid-cols-2 gap-4">
-          <p className="text-sm">
-            <span className="font-semibold">Contract ID:</span> {contract.id}
-          </p>
-          <p className="text-sm">
-            <span className="font-semibold">Status:</span> 
-            {contract.isCompleted ? 'Completed' : (isExpired ? 'Expired' : 'Active')}
-          </p>
-          <p className="text-sm">
-            <span className="font-semibold">PG Owner:</span> 
-            {`${contract.pgOwner.slice(0,6)}...${contract.pgOwner.slice(-4)}`}
-          </p>
-          <p className="text-sm">
-            <span className="font-semibold">Renter:</span> 
-            {`${contract.renter.slice(0,6)}...${contract.renter.slice(-4)}`}
-          </p>
-          <p className="text-sm">
-            <span className="font-semibold">Deposit:</span> 
-            {ethers.formatEther(contract.depositAmount)} ETH
-          </p>
-          <p className="text-sm">
-            <span className="font-semibold">End Date:</span> 
-            {new Date(contract.endDate * 1000).toLocaleString()}
-          </p>
-          {contract.isActive && !contract.isCompleted && (
-            <p className={`text-sm col-span-2 ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
-              <span className="font-semibold">Status:</span> 
-              {isExpired ? ' Expired (processing return)' : ` Time remaining: ${Math.floor(contract.timeRemaining / 3600)}h ${Math.floor((contract.timeRemaining % 3600) / 60)}m`}
+          <div>
+            <p className="text-sm font-medium">Contract ID: {contract.id}</p>
+            <p className="text-sm">PG Owner: {contract.pgOwner}</p>
+            <p className="text-sm">Renter: {contract.renter}</p>
+            <p className="text-sm">Validator: {contract.validator}</p>
+          </div>
+          <div>
+            <p className="text-sm">Deposit: {contract.depositAmount} ETH</p>
+            <p className="text-sm">
+              Validator Fee: {contract.validatorFee} ETH
             </p>
-          )}
+            <p className="text-sm">
+              End Date: {new Date(contract.endDate * 1000).toLocaleString()}
+            </p>
+            {/* {timeRemaining > 0 && (
+              <p className="text-sm text-green-600">
+                Time Remaining: {Math.floor(timeRemaining / 3600)}h{" "}
+                {Math.floor((timeRemaining % 3600) / 60)}m
+              </p>
+            )} */}
+          </div>
         </div>
-        
-        {canSign && (
-          <div className="mt-4">
+
+        <div className="mt-4">
+          {role === "renter" && type === "pending" && (
             <button
               onClick={() => signContract(contract.id, contract.depositAmount)}
               disabled={isLoading}
-              className={`w-full py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white ${
-                isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
+              className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-green-400"
             >
-              {isLoading ? 'Processing...' : 'Accept & Pay Deposit'}
+              {isLoading ? "Signing..." : "Sign & Pay Deposit"}
+            </button>
+          )}
+
+          {role === "pgOwner" &&
+            type === "active" &&
+            canRequestValidator &&
+            !contract.validatorRequested && (
+              <button
+                onClick={() =>
+                  requestValidator(contract.id, contract.validatorFee)
+                }
+                disabled={isLoading}
+                className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400"
+              >
+                {isLoading ? "Requesting..." : "Request Validator"}
+              </button>
+            )}
+
+          {role === "validator" && type === "pending" && (
+            <div className="flex gap-4">
+              <input
+                type="number"
+                placeholder="Damage amount in ETH"
+                className="flex-1 p-2 border rounded-md"
+                onChange={(e) => setDamageAmount(e.target.value)}
+              />
+              <button
+                onClick={() => completeContract(contract.id, damageAmount)}
+                disabled={isLoading}
+                className="py-2 px-4 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-purple-400"
+              >
+                {isLoading ? "Processing..." : "Complete Contract"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const logout = () => {
+    setCurrentAccount(null);
+    setIsInitialized(false);
+  };
+
+  const renderDashboard = () => {
+    return (
+      <div className="w-full">
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <p className="text-sm text-gray-600">Connected: {currentAccount}</p>
+            <button
+              onClick={logout}
+              className="py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700"
+            >
+              Logout
             </button>
           </div>
-        )}
+        </div>
+        <div className="grid grid-cols-3 gap-4 mb-8 bg-gray-100 p-1 rounded-lg">
+          {["renter", "pgOwner", "validator"].map((tabValue) => (
+            <button
+              key={tabValue}
+              onClick={() => setRole(tabValue)}
+              className={`flex items-center justify-center py-2 px-4 rounded-md transition-all ${
+                role === tabValue ? "bg-white shadow-sm" : "hover:bg-gray-200"
+              }`}
+            >
+              {tabValue === "renter" && <WalletIcon className="w-4 h-4 mr-2" />}
+              {tabValue === "pgOwner" && <HomeIcon className="w-4 h-4 mr-2" />}
+              {tabValue === "validator" && (
+                <CheckCircleIcon className="w-4 h-4 mr-2" />
+              )}
+              {tabValue.charAt(0).toUpperCase() + tabValue.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-8">
+          {role === "pgOwner" && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold mb-4">
+                Create New Contract
+              </h2>
+              <form
+  className="space-y-4"
+  onSubmit={createContract}
+>
+  {/* Form fields remain the same */}
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Renter Address
+    </label>
+    <input
+      type="text"
+      value={newContract.renter}
+      onChange={(e) =>
+        setNewContract({ ...newContract, renter: e.target.value })
+      }
+      className="w-full p-2 border rounded-md"
+      placeholder="0x..."
+      required
+    />
+  </div>
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Validator Address
+    </label>
+    <input
+      type="text"
+      value={newContract.validator}
+      onChange={(e) =>
+        setNewContract({ ...newContract, validator: e.target.value })
+      }
+      className="w-full p-2 border rounded-md"
+      placeholder="0x..."
+      required
+    />
+  </div>
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Deposit Amount (ETH)
+    </label>
+    <input
+      type="number"
+      value={newContract.depositAmount}
+      onChange={(e) =>
+        setNewContract({ ...newContract, depositAmount: e.target.value })
+      }
+      className="w-full p-2 border rounded-md"
+      step="0.01"
+      min="0"
+      required
+    />
+  </div>
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Validator Fee (ETH)
+    </label>
+    <input
+      type="number"
+      value={newContract.validatorFee}
+      onChange={(e) =>
+        setNewContract({ ...newContract, validatorFee: e.target.value })
+      }
+      className="w-full p-2 border rounded-md"
+      step="0.01"
+      min="0"
+      required
+    />
+  </div>
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Duration (in days)
+    </label>
+    <input
+      type="number"
+      value={newContract.duration}
+      onChange={(e) =>
+        setNewContract({ ...newContract, duration: e.target.value })
+      }
+      className="w-full p-2 border rounded-md"
+      min="1"
+      required
+    />
+  </div>
+  <button
+    type="submit"
+    disabled={isLoading}
+    className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400"
+  >
+    {isLoading ? "Creating..." : "Create Contract"}
+  </button>
+</form>
+            </div>
+          )}
+
+          {/* Contracts Sections */}
+          {(role === "renter" || role === "pgOwner") && (
+            <>
+              <div className="bg-white rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold p-6 border-b">
+                  Pending Contracts
+                </h2>
+                <div className="p-6">
+                  {pendingContracts.length > 0 ? (
+                    pendingContracts.map((c) =>
+                      renderContractCard(c, "pending")
+                    )
+                  ) : (
+                    <p className="text-gray-500">No pending contracts</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold p-6 border-b">
+                  Active Contracts
+                </h2>
+                <div className="p-6">
+                  {activeContracts.length > 0 ? (
+                    activeContracts.map((c) => renderContractCard(c, "active"))
+                  ) : (
+                    <p className="text-gray-500">No active contracts</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold p-6 border-b">
+                  Completed Contracts
+                </h2>
+                <div className="p-6">
+                  {completedContracts.length > 0 ? (
+                    completedContracts.map((c) =>
+                      renderContractCard(c, "completed")
+                    )
+                  ) : (
+                    <p className="text-gray-500">No completed contracts</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {role === "validator" && (
+            <>
+              <div className="bg-white rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold p-6 border-b">
+                  Pending Validation Requests
+                </h2>
+                <div className="p-6">
+                  {validatorPendingContracts.length > 0 ? (
+                    validatorPendingContracts.map((c) =>
+                      renderContractCard(c, "pending")
+                    )
+                  ) : (
+                    <p className="text-gray-500">
+                      No pending validation requests
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold p-6 border-b">
+                  Completed Validations
+                </h2>
+                <div className="p-6">
+                  {validatorCompletedContracts.length > 0 ? (
+                    validatorCompletedContracts.map((c) =>
+                      renderContractCard(c, "completed")
+                    )
+                  ) : (
+                    <p className="text-gray-500">No completed validations</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderWalletConnection = () => {
+    if (!window.ethereum) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+          <div className="mb-4 text-xl font-semibold">
+            MetaMask is not installed
+          </div>
+          <p className="mb-6 text-gray-600">
+            Please install MetaMask to use this application
+          </p>
+          <a
+            href="https://metamask.io/download.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Install MetaMask
+          </a>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="mb-4 text-xl font-semibold">
+          Welcome to Rental Platform
+        </div>
+        <p className="mb-6 text-gray-600">
+          Please connect your wallet to continue
+        </p>
+        <button
+          onClick={connectWallet}
+          disabled={isConnecting}
+          className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400"
+        >
+          {isConnecting ? (
+            <>
+              <span className="inline-block animate-spin mr-2">↻</span>
+              Connecting...
+            </>
+          ) : (
+            <>
+              <WalletIcon className="w-5 h-5 mr-2" />
+              Connect Wallet
+            </>
+          )}
+        </button>
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-center text-gray-900 mb-8">
-          Rental Platform
-        </h1>
-
-        {!currentAccount ? (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <button
-              onClick={connectWallet}
-              disabled={isConnecting}
-              className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                isConnecting ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500`}
-            >
-              {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="bg-white rounded-lg shadow p-6 mb-8">
-              <div className="flex items-center justify-between mb-6">
-                <p className="text-sm text-gray-600">Connected: {currentAccount}</p>
-                <div className="flex items-center space-x-4">
-                  <span className={`text-sm ${isRenter ? 'text-indigo-600 font-medium' : 'text-gray-500'}`}>Renter</span>
-                  <button
-                    onClick={toggleDashboard}
-                    className={`relative inline-flex items-center h-6 rounded-full w-11 ${
-                      !isRenter ? 'bg-indigo-600' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span className={`inline-block w-4 h-4 transform transition-transform bg-white rounded-full ${
-                      !isRenter ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                  <span className={`text-sm ${!isRenter ? 'text-indigo-600 font-medium' : 'text-gray-500'}`}>PG Owner</span>
-                </div>
-              </div>
-
-              {!isRenter && (
-                <div className="border-t pt-6">
-                  <h2 className="text-xl font-semibold mb-4">Create New Contract</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label htmlFor="renterAddress" className="block text-sm font-medium text-gray-700">
-                        Renter Address
-                      </label>
-                      <input
-                        type="text"
-                        id="renterAddress"
-                        value={renterAddress}
-                        onChange={(e) => setRenterAddress(e.target.value)}
-                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
-                        placeholder="0x..."
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="depositAmount" className="block text-sm font-medium text-gray-700">
-                        Deposit Amount (ETH)
-                      </label>
-                      <input
-                        type="number"
-                        id="depositAmount"
-                        value={depositAmount}
-                        onChange={(e) => setDepositAmount(e.target.value)}
-                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
-                        step="0.01"
-                        min="0"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="contractDuration" className="block text-sm font-medium text-gray-700">
-                        Contract Duration (seconds)
-                      </label>
-                      <input
-                        type="number"
-                        id="contractDuration"
-                        value={contractDuration}
-                        onChange={(e) => setContractDuration(e.target.value)}
-                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-indigo-500 focus:border-indigo-500"
-                        min="0"
-                      />
-                    </div>
-                    <button
-                      onClick={createContract}
-                      disabled={isLoading}
-                      className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                        isLoading ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700'
-                      } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500`}
-                    >
-                      {isLoading ? 'Creating Contract...' : 'Create Contract'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-8">
-              <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-semibold mb-4">Active Contracts</h2>
-                {activeContracts.length > 0 ? (
-                  <div className="space-y-4">
-                    {activeContracts.map((contract) => renderContractCard(contract))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500">No active contracts found.</p>
-                )}
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-semibold mb-4">All Contracts</h2>
-                {allContracts.length > 0 ? (
-                  <div className="space-y-4">
-                    {allContracts.map((contract) => renderContractCard(contract))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500">No contracts found.</p>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {error && (
-          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-600 text-center">{error}</p>
-          </div>
-        )}
-      </div>
+    <div className="container mx-auto p-4">
+      {error && (
+        <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-md">
+          {error}
+        </div>
+      )}
+      {!currentAccount ? renderWalletConnection() : renderDashboard()}
     </div>
   );
 };
