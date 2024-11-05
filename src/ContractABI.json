@@ -95,9 +95,15 @@
 				"internalType": "uint256",
 				"name": "contractId",
 				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "rejector",
+				"type": "address"
 			}
 		],
-		"name": "ContractExpired",
+		"name": "ContractRejected",
 		"type": "event"
 	},
 	{
@@ -130,6 +136,25 @@
 			}
 		],
 		"name": "OwnershipTransferred",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "contractId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "PaymentReceived",
 		"type": "event"
 	},
 	{
@@ -248,9 +273,28 @@
 				"type": "uint256"
 			}
 		],
-		"name": "expireContract",
+		"name": "emergencyWithdraw",
 		"outputs": [],
 		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_contractId",
+				"type": "uint256"
+			}
+		],
+		"name": "getContractBalance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
 		"type": "function"
 	},
 	{
@@ -360,6 +404,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -378,6 +427,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -417,6 +471,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -435,6 +494,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -474,6 +538,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -492,6 +561,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -545,6 +619,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -563,6 +642,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -602,6 +686,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -620,6 +709,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -659,6 +753,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -677,6 +776,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -730,6 +834,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -748,6 +857,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -787,6 +901,11 @@
 						"type": "uint256"
 					},
 					{
+						"internalType": "uint256",
+						"name": "duration",
+						"type": "uint256"
+					},
+					{
 						"internalType": "enum DAPDVS.ContractState",
 						"name": "state",
 						"type": "uint8"
@@ -805,6 +924,11 @@
 						"internalType": "bool",
 						"name": "validatorPaid",
 						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "contractBalance",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct DAPDVS.RentalContract[]",
@@ -839,6 +963,19 @@
 			}
 		],
 		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_contractId",
+				"type": "uint256"
+			}
+		],
+		"name": "rejectContract",
+		"outputs": [],
+		"stateMutability": "nonpayable",
 		"type": "function"
 	},
 	{
@@ -889,6 +1026,11 @@
 				"type": "uint256"
 			},
 			{
+				"internalType": "uint256",
+				"name": "duration",
+				"type": "uint256"
+			},
+			{
 				"internalType": "enum DAPDVS.ContractState",
 				"name": "state",
 				"type": "uint8"
@@ -907,6 +1049,11 @@
 				"internalType": "bool",
 				"name": "validatorPaid",
 				"type": "bool"
+			},
+			{
+				"internalType": "uint256",
+				"name": "contractBalance",
+				"type": "uint256"
 			}
 		],
 		"stateMutability": "view",

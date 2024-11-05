@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract DAPDVS is ReentrancyGuard, Ownable {
-    enum ContractState { PENDING, ACTIVE, EXPIRED, COMPLETED }
+    enum ContractState { PENDING, ACTIVE, REJECTED, COMPLETED }
 
     struct RentalContract {
         address payable pgOwner;
@@ -14,10 +14,12 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         uint256 validatorFee;
         uint256 startDate;
         uint256 endDate;
+        uint256 duration;
         ContractState state;
         bool validatorRequested;
         address payable validator;
         bool validatorPaid;
+        uint256 contractBalance; // Track the actual balance held by the contract
     }
 
     mapping(uint256 => RentalContract) public rentalContracts;
@@ -28,10 +30,11 @@ contract DAPDVS is ReentrancyGuard, Ownable {
 
     event ContractCreated(uint256 indexed contractId, address pgOwner, address renter, address validator);
     event ContractSigned(uint256 indexed contractId);
-    event ContractExpired(uint256 indexed contractId);
+    event ContractRejected(uint256 indexed contractId, address rejector);
     event ValidatorRequested(uint256 indexed contractId, address validator);
     event ContractCompleted(uint256 indexed contractId, uint256 renterRefund, uint256 ownerPayment);
     event ValidatorPaid(uint256 indexed contractId, address validator, uint256 fee);
+    event PaymentReceived(uint256 indexed contractId, uint256 amount);
 
     constructor() Ownable(msg.sender) {
         nextContractId = 1;
@@ -56,7 +59,7 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         newContract.state = ContractState.PENDING;
         newContract.validatorRequested = false;
         newContract.validatorPaid = false;
-        newContract.endDate = block.timestamp + _duration;
+        newContract.duration = _duration;
 
         userContracts[msg.sender].push(nextContractId);
         userContracts[_renter].push(nextContractId);
@@ -69,22 +72,25 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         RentalContract storage rentalContract = rentalContracts[_contractId];
         require(msg.sender == rentalContract.renter, "Only the designated renter can sign");
         require(rentalContract.state == ContractState.PENDING, "Contract is not in pending state");
-        require(msg.value == rentalContract.depositAmount, "Incorrect deposit amount");
-        require(block.timestamp <= rentalContract.endDate, "Contract has expired");
-
+        require(msg.value == rentalContract.depositAmount, "Incorrect deposit amount sent");
+        
         rentalContract.state = ContractState.ACTIVE;
         rentalContract.startDate = block.timestamp;
+        rentalContract.endDate = block.timestamp + rentalContract.duration;
+        rentalContract.contractBalance = msg.value; // Track the received balance
 
         emit ContractSigned(_contractId);
+        emit PaymentReceived(_contractId, msg.value);
     }
 
-    function expireContract(uint256 _contractId) external {
+    function rejectContract(uint256 _contractId) external {
         RentalContract storage rentalContract = rentalContracts[_contractId];
-        require(msg.sender == rentalContract.renter, "Only the renter can expire the contract");
-        require(rentalContract.state == ContractState.PENDING, "Contract must be pending");
-
-        rentalContract.state = ContractState.EXPIRED;
-        emit ContractExpired(_contractId);
+        require(msg.sender == rentalContract.pgOwner || msg.sender == rentalContract.renter, "Only PG owner or renter can reject the contract");
+        require(rentalContract.state == ContractState.PENDING, "Contract can only be rejected when pending");
+        
+        rentalContract.state = ContractState.REJECTED;
+        
+        emit ContractRejected(_contractId, msg.sender);
     }
 
     function requestValidator(uint256 _contractId) external payable nonReentrant {
@@ -92,10 +98,11 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         require(msg.sender == rentalContract.pgOwner, "Only the PG owner can request validator");
         require(rentalContract.state == ContractState.ACTIVE, "Contract is not active");
         require(!rentalContract.validatorRequested, "Validator already requested");
-        require(msg.value == rentalContract.validatorFee, "Incorrect validator fee");
         require(block.timestamp <= rentalContract.endDate, "Contract has ended");
+        require(msg.value == rentalContract.validatorFee, "Incorrect validator fee amount sent");
 
         rentalContract.validatorRequested = true;
+        rentalContract.contractBalance += msg.value;
         validatorContracts[rentalContract.validator].push(_contractId);
 
         emit ValidatorRequested(_contractId, rentalContract.validator);
@@ -107,29 +114,49 @@ contract DAPDVS is ReentrancyGuard, Ownable {
         require(rentalContract.state == ContractState.ACTIVE, "Contract is not active");
         require(rentalContract.validatorRequested, "Validator not requested");
         require(_damageAmount <= rentalContract.depositAmount, "Damage amount exceeds deposit");
+        require(rentalContract.contractBalance >= 
+                rentalContract.depositAmount + rentalContract.validatorFee, 
+                "Insufficient contract balance");
 
         uint256 renterRefund = rentalContract.depositAmount - _damageAmount;
-        rentalContract.renter.transfer(renterRefund);
-        rentalContract.pgOwner.transfer(_damageAmount);
-        rentalContract.validator.transfer(rentalContract.validatorFee);
         
+        // Update state before transfers to prevent reentrancy
         rentalContract.state = ContractState.COMPLETED;
         rentalContract.validatorPaid = true;
+        // uint256 originalBalance = rentalContract.contractBalance;
+        rentalContract.contractBalance = 0;
+
+        // Perform transfers after state updates
+        bool successRenter = sendPayment(rentalContract.renter, renterRefund);
+        require(successRenter, "Transfer to renter failed");
+
+        bool successOwner = sendPayment(rentalContract.pgOwner, _damageAmount);
+        require(successOwner, "Transfer to property owner failed");
+
+        bool successValidator = sendPayment(rentalContract.validator, rentalContract.validatorFee);
+        require(successValidator, "Transfer to validator failed");
 
         emit ContractCompleted(_contractId, renterRefund, _damageAmount);
         emit ValidatorPaid(_contractId, rentalContract.validator, rentalContract.validatorFee);
     }
 
-    function autoCompleteContract(uint256 _contractId) public nonReentrant {
+    function autoCompleteContract(uint256 _contractId) external nonReentrant {
         RentalContract storage rentalContract = rentalContracts[_contractId];
         require(rentalContract.state == ContractState.ACTIVE, "Contract is not active");
         require(!rentalContract.validatorRequested, "Validator has been requested");
         require(block.timestamp > rentalContract.endDate, "Contract has not ended yet");
+        require(rentalContract.contractBalance >= rentalContract.depositAmount, 
+                "Insufficient contract balance");
 
-        rentalContract.renter.transfer(rentalContract.depositAmount);
+        // Update state before transfer
         rentalContract.state = ContractState.COMPLETED;
+        uint256 refundAmount = rentalContract.depositAmount;
+        rentalContract.contractBalance = 0;
 
-        emit ContractCompleted(_contractId, rentalContract.depositAmount, 0);
+        bool success = sendPayment(rentalContract.renter, refundAmount);
+        require(success, "Transfer to renter failed");
+
+        emit ContractCompleted(_contractId, refundAmount, 0);
     }
 
     function getPgOwnerContracts(address _pgOwner) external view returns (
@@ -289,5 +316,31 @@ contract DAPDVS is ReentrancyGuard, Ownable {
             rentalContract.validatorRequested,
             rentalContract.validatorPaid
         );
+    }
+
+    function sendPayment(address payable recipient, uint256 amount) private returns (bool) {
+        require(recipient != address(0), "Invalid recipient address");
+        require(amount > 0, "Amount must be greater than 0");
+        
+        (bool success, ) = recipient.call{value: amount}("");
+        return success;
+    }
+
+    // Add function to verify contract balance
+    function getContractBalance(uint256 _contractId) external view returns (uint256) {
+        return rentalContracts[_contractId].contractBalance;
+    }
+
+    // Add emergency withdrawal function for stuck funds (only owner)
+    function emergencyWithdraw(uint256 _contractId) external onlyOwner {
+        RentalContract storage rentalContract = rentalContracts[_contractId];
+        require(rentalContract.state == ContractState.COMPLETED, "Contract must be completed");
+        require(rentalContract.contractBalance > 0, "No balance to withdraw");
+
+        uint256 amount = rentalContract.contractBalance;
+        rentalContract.contractBalance = 0;
+        
+        (bool success, ) = payable(owner()).call{value: amount}("");
+        require(success, "Emergency withdrawal failed");
     }
 }

@@ -4,7 +4,7 @@ import DAPDVS_ABI from "./ContractABI.json";
 const ethers = require("ethers");
 const DAPDVS_ADDRESS = "0xD6A3d8C60944BC38ded01Ca3FD6AC7cE77953861";
 const EXPECTED_CHAIN_ID = 11155111n; // Sepolia testnet - adjust as needed
-const MINIMUM_GAS_LIMIT = 300000;
+const MINIMUM_GAS_LIMIT = 3000000n;
 
 const RentalPlatform = () => {
   const [currentAccount, setCurrentAccount] = useState(null);
@@ -302,91 +302,93 @@ const RentalPlatform = () => {
   };
 
   const signContract = async (contractId, depositAmount) => {
-  try {
-    // Input validation
-    if (!contractId || !depositAmount) {
-      throw new Error("Invalid contract parameters");
+    try {
+      setLoadingContractId(contractId);
+      setError(null);
+
+      // Enhanced input validation
+      if (contractId === undefined || contractId === null) {
+        throw new Error("Contract ID is required");
+      }
+
+      if (!depositAmount || depositAmount <= 0) {
+        throw new Error("Invalid deposit amount");
+      }
+
+      console.log("Signing contract with parameters:", {
+        contractId,
+        depositAmount,
+      });
+
+      // Get contract details first to verify the required deposit amount
+      const contractDetails = await contract.getContractDetails(contractId);
+      console.log(contractDetails);
+      // const requiredDeposit = contractDetails.depositAmount;
+      //
+      // // Verify the deposit amount matches exactly
+      // if (ethers.parseEther(depositAmount.toString()) !== requiredDeposit.toString()) {
+      //   throw new Error(`Incorrect deposit amount ${ethers.parseEther(depositAmount.toString())}. Required: ${requiredDeposit.toString()} ETH`);
+      // }
+
+      // Convert deposit amount to Wei
+      const depositInWei = ethers.parseEther(depositAmount.toString());
+
+      // Perform all verifications
+      console.log("Starting contract verification process...");
+
+      // 1. Verify network connection
+      await verifyNetwork(provider);
+      console.log("Network verification successful");
+
+      // 2. Verify user balance
+      await verifyBalance(provider, currentAccount, depositInWei);
+      console.log("Balance verification successful");
+
+      // 3. Verify contract state
+      await verifyContractBeforeSigning(contractId);
+      console.log("Contract state verification successful");
+
+      // Send transaction with the exact deposit amount
+      const tx = await contract.signContract(contractId, {
+        value: depositInWei,
+        gasLimit: MINIMUM_GAS_LIMIT,
+      });
+
+      const receipt = await tx.wait();
+
+      if (receipt.status === 0) {
+        throw new Error("Transaction failed");
+      }
+
+      await fetchContracts();
+      return receipt;
+    } catch (error) {
+      console.error("Error in signContract:", error);
+      let errorMessage;
+
+      // Enhanced error handling
+      if (error.reason) {
+        errorMessage = `Contract signing failed: ${error.reason}`;
+      } else if (error.data?.message) {
+        errorMessage = `Contract signing failed: ${error.data.message}`;
+      } else if (error.message.includes("user rejected")) {
+        errorMessage = "Transaction was rejected by user";
+      } else if (error.message.includes("insufficient funds")) {
+        errorMessage = "Insufficient funds to complete transaction";
+      } else if (error.message.includes("execution reverted")) {
+        errorMessage = "Transaction reverted - contract requirements not met";
+      } else {
+        errorMessage = error.message || "Failed to sign contract";
+      }
+
+      setError(errorMessage);
+      throw error;
+    } finally {
+      setLoadingContractId(null);
     }
+  };
 
-    setLoadingContractId(contractId);
-    setError(null);
-
-    // Convert deposit amount to Wei
-    const depositInWei = ethers.parseEther(depositAmount.toString());
-
-    // Perform all verifications
-    console.log("Starting contract verification process...");
-
-    // 1. Verify network connection
-    await verifyNetwork(provider);
-    console.log("Network verification successful");
-
-    // 2. Verify user balance
-    await verifyBalance(provider, currentAccount, depositInWei);
-    console.log("Balance verification successful");
-
-    // 3. Verify contract state
-    await verifyContractBeforeSigning(contractId);
-    console.log("Contract state verification successful");
-
-    // 4. Estimate gas to ensure transaction won't fail
-    const gasEstimate = await contract.signContract.estimateGas(contractId);
-
-    // Add 20% buffer to gas estimate
-    const gasLimit = (gasEstimate*2n);
-
-    // Ensure minimum gas limit
-    const finalGasLimit = gasLimit < MINIMUM_GAS_LIMIT
-      ? MINIMUM_GAS_LIMIT 
-      : gasLimit.toString();
-
-    console.log("Estimated gas limit:", finalGasLimit);
-
-    // Prepare transaction with all verified parameters
-    const tx = await contract.signContract(contractId, {
-      value: depositInWei,
-      gasLimit: finalGasLimit
-    });
-
-    console.log("Transaction sent:", tx.hash);
-
-    // Wait for transaction confirmation
-    const receipt = await tx.wait();
-    console.log("Transaction confirmed:", receipt);
-
-    // Verify transaction success
-    if (receipt.status === 0) {
-      throw new Error("Transaction failed");
-    }
-
-    // Refresh contracts list
-    await fetchContracts();
-
-    return receipt;
-  } catch (error) {
-    console.error("Error in signContract:", error);
-    
-    // Enhanced error handling with specific messages
-    let errorMessage;
-    if (error.reason) {
-      errorMessage = `Contract signing failed: ${error.reason}`;
-    } else if (error.data?.message) {
-      errorMessage = `Contract signing failed: ${error.data.message}`;
-    } else if (error.message.includes("user rejected")) {
-      errorMessage = "Transaction was rejected by user";
-    } else if (error.message.includes("insufficient funds")) {
-      errorMessage = "Insufficient funds to complete transaction";
-    } else {
-      errorMessage = error.message || "Failed to sign contract";
-    }
-
-    setError(errorMessage);
-    throw error;
-  } finally {
-    setLoadingContractId(null);
-  }
-};
-
+  
 // Event Listeners for network and account changes
 const setupEventListeners = () => {
   if (window.ethereum) {
@@ -551,7 +553,11 @@ const verifyBalance = async (provider, account, requiredAmount) => {
         <div className="mt-4">
           {role === "renter" && type === "pending" && (
             <button
-              onClick={() => signContract(contract.id, contract.depositAmount)}
+              onClick={() => {
+                console.log("Contract ID:", contract.id);
+                console.log("Deposit Amount:", contract.depositAmount);
+                signContract(contract.id, contract.depositAmount);
+              }}
               disabled={isLoading}
               className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-green-400"
             >
@@ -686,7 +692,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
         setNewContract({ ...newContract, depositAmount: e.target.value })
       }
       className="w-full p-2 border rounded-md"
-      step="0.00000000000000000000000001"
+      step="0.000000000001"
       min="0"
       required
     />
@@ -702,7 +708,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
         setNewContract({ ...newContract, validatorFee: e.target.value })
       }
       className="w-full p-2 border rounded-md"
-      step="0.0000000000000000000000000000001"
+      step="0.000000001"
       min="0"
       required
     />
