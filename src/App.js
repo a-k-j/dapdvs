@@ -686,7 +686,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
         setNewContract({ ...newContract, depositAmount: e.target.value })
       }
       className="w-full p-2 border rounded-md"
-      step="0.01"
+      step="0.00000000000000000000000001"
       min="0"
       required
     />
@@ -702,14 +702,14 @@ const verifyBalance = async (provider, account, requiredAmount) => {
         setNewContract({ ...newContract, validatorFee: e.target.value })
       }
       className="w-full p-2 border rounded-md"
-      step="0.01"
+      step="0.0000000000000000000000000000001"
       min="0"
       required
     />
   </div>
   <div>
     <label className="block text-sm font-medium mb-1">
-      Duration (in days)
+      Duration (in seconds)
     </label>
     <input
       type="number"
