@@ -64,25 +64,25 @@ Our project offers the following features:
 
 ### Login through Metamask
 
-![login through metamask](Execution screenshots/login.png)
+![login through metamask](./Execution%20screenshots/login.png)
 
 ### Create New contracts
 
-![create new contract](Execution screenshots/create contract.png)
+![create new contract](./Execution%20screenshots/create%20contract.png)
 
 ### Fetch contracts
 
-![Fetch contracts](Execution screenshots/fetch contracts.png)
+![Fetch contracts](./Execution%20screenshots/fetch%20contracts.png)
 
 ### pgOwner Reject
 
-![reject contract by pgOwner](Execution screenshots/pgowner reject.png)
+![reject contract by pgOwner](./Execution%20screenshots/pgowner%20reject.png)
 
 ### Renter accept reject
 
-![Renter accept reject](Execution screenshots/renter accept reject.png)
+![Renter accept reject](./Execution%20screenshots/renter%20accept%20reject.png)
 
 ### Request Validator
 
-![Request Validator](Execution screenshots/request validator.png)
+![Request Validator](./Execution%20screenshots/request%20validator.png)
 
