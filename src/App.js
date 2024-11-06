@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { ClockIcon, WalletIcon, CheckCircleIcon, HomeIcon } from "lucide-react";
 import DAPDVS_ABI from "./ContractABI.json";
 const ethers = require("ethers");
-const DAPDVS_ADDRESS = "0xd6A091Ea86EaA7869507396b39b0980b493542b5";
+const DAPDVS_ADDRESS = "0x7A095AE9f9BEc959970B3B45dC8543564208961b";
 const EXPECTED_CHAIN_ID = 11155111n; // Sepolia testnet - adjust as needed
 const MINIMUM_GAS_LIMIT = 3000000n;
 
@@ -154,7 +154,7 @@ const RentalPlatform = () => {
   const formatContracts = (contracts) => {
     if (!contracts) return [];
     return contracts.map((c) => ({
-      id: Number(c.contractId), 
+      id: Number(c[11]),
       ...c,
       depositAmount: ethers.formatEther(c.depositAmount.toString()),
       validatorFee: ethers.formatEther(c.validatorFee.toString()),
@@ -504,9 +504,16 @@ const verifyBalance = async (provider, account, requiredAmount) => {
       setLoadingContractId(contractId);
       setError(null);
 
+    console.log("Original damage amount:", damageAmount);
+
+    // Convert the decimal Wei amount to a string and remove any decimals
+    const damageAmountWei = ethers.formatUnits(damageAmount, "wei");
+    console.log("Formatted Wei amount:", damageAmountWei);
+
+
       const tx = await contract.completeContract(
         contractId,
-        ethers.parseEther(damageAmount.toString()),
+        damageAmountWei,
         { gasLimit: 500000 }
       );
 
@@ -520,48 +527,43 @@ const verifyBalance = async (provider, account, requiredAmount) => {
   };
 
   const renderContractCard = (contract, type) => {
-    const isLoading = loadingContractId === contract.id;
+    const isLoading = loadingContractId === Number(contract[11]);
     const currentTime = Math.floor(Date.now() / 1000);
     const timeRemaining = contract.endDate - currentTime;
-    const canRequestValidator = timeRemaining <= 86400; // 24 hours before end
 
+    console.log(contract);
     return (
-      <div key={contract.id} className="mb-4 p-6 bg-white rounded-lg shadow-md">
+      <div key={Number(contract[11])} className="mb-4 p-6 bg-white rounded-lg shadow-md">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <p className="text-sm font-medium">Contract ID: {contract.id}</p>
+            <p className="text-sm font-medium">Contract ID: {Number(contract[11])}</p>
             <p className="text-sm">PG Owner: {contract[0]}</p>
             <p className="text-sm">Renter: {contract[1]}</p>
             <p className="text-sm">Validator: {contract[9]}</p>
           </div>
           <div>
             <p className="text-sm">Deposit: {contract.depositAmount} ETH</p>
-            <p className="text-sm">
-              Validator Fee: {contract.validatorFee} ETH
-            </p>
-            <p className="text-sm">
-              Start Date: {contract[4]}
-            </p>
-            <p className="text-sm">
-              End Date: {contract[5]}
-            </p>
-            {/* {timeRemaining > 0 && (
-              <p className="text-sm text-green-600">
-                Time Remaining: {Math.floor(timeRemaining / 3600)}h{" "}
-                {Math.floor((timeRemaining % 3600) / 60)}m
+            <p className="text-sm">Validator Fee: {contract.validatorFee} ETH</p>
+            <div className="space-y-1">
+              <p className="text-sm">
+                Start: {formatDate(contract.startDate)}
               </p>
-            )} */}
+              <p className="text-sm">
+                End: {formatDate(contract.endDate)}
+              </p>
+              {timeRemaining > 0 && (
+                <p className="text-sm font-medium text-blue-600">
+                  Time Remaining: {getTimeRemaining(contract.endDate)}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="mt-4">
           {role === "renter" && type === "pending" && (
             <button
-              onClick={() => {
-                console.log("Contract ID:", contract.id);
-                console.log("Deposit Amount:", contract.depositAmount);
-                signContract(contract.id, contract.depositAmount);
-              }}
+              onClick={() => signContract(Number(contract[11]), contract.depositAmount)}
               disabled={isLoading}
               className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-green-400"
             >
@@ -569,20 +571,15 @@ const verifyBalance = async (provider, account, requiredAmount) => {
             </button>
           )}
 
-          {role === "pgOwner" &&
-            type === "active" &&
-            canRequestValidator &&
-            !contract.validatorRequested && (
-              <button
-                onClick={() =>
-                  requestValidator(contract.id, contract.validatorFee)
-                }
-                disabled={isLoading}
-                className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400"
-              >
-                {isLoading ? "Requesting..." : "Request Validator"}
-              </button>
-            )}
+          {role === "pgOwner" && type === "active" && !contract.validatorRequested && (
+            <button
+              onClick={() => requestValidator(Number(contract[11]), contract.validatorFee)}
+              disabled={isLoading}
+              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400"
+            >
+              {isLoading ? "Requesting..." : "Request Validator"}
+            </button>
+          )}
 
           {role === "validator" && type === "pending" && (
             <div className="flex gap-4">
@@ -593,7 +590,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
                 onChange={(e) => setDamageAmount(e.target.value)}
               />
               <button
-                onClick={() => completeContract(contract.id, damageAmount)}
+                onClick={() => completeContract(Number(contract[11]), damageAmount)}
                 disabled={isLoading}
                 className="py-2 px-4 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-purple-400"
               >
@@ -609,6 +606,31 @@ const verifyBalance = async (provider, account, requiredAmount) => {
   const logout = () => {
     setCurrentAccount(null);
     setIsInitialized(false);
+  };
+
+  const formatDate = (epochTimestamp) => {
+    if (!epochTimestamp) return 'N/A';
+    const date = new Date(epochTimestamp * 1000); // Convert seconds to milliseconds
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getTimeRemaining = (endDate) => {
+    const now = Math.floor(Date.now() / 1000);
+    const remaining = endDate - now;
+    
+    if (remaining <= 0) return 'Expired';
+    
+    const days = Math.floor(remaining / 86400);
+    const hours = Math.floor((remaining % 86400) / 3600);
+    const minutes = Math.floor((remaining % 3600) / 60);
+    
+    return `${days}d ${hours}h ${minutes}m`;
   };
 
   const renderDashboard = () => {

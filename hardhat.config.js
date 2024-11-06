@@ -19,6 +19,14 @@ module.exports = {
       },
     }
   },
+  settings: {
+      optimizer: {
+        enabled: true,
+        runs: 100,
+      },
+      viaIR: true,
+    },
+
   mocha: {
     timeout: 100000
   }
