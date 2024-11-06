@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { ClockIcon, WalletIcon, CheckCircleIcon, HomeIcon } from "lucide-react";
 import DAPDVS_ABI from "./ContractABI.json";
 const ethers = require("ethers");
-const DAPDVS_ADDRESS = "0xD6A3d8C60944BC38ded01Ca3FD6AC7cE77953861";
+const DAPDVS_ADDRESS = "0xd6A091Ea86EaA7869507396b39b0980b493542b5";
 const EXPECTED_CHAIN_ID = 11155111n; // Sepolia testnet - adjust as needed
 const MINIMUM_GAS_LIMIT = 3000000n;
 
@@ -153,8 +153,8 @@ const RentalPlatform = () => {
 
   const formatContracts = (contracts) => {
     if (!contracts) return [];
-    return contracts.map((c, index) => ({
-      id: index, // Add an id if not present in the contract
+    return contracts.map((c) => ({
+      id: Number(c.contractId), 
       ...c,
       depositAmount: ethers.formatEther(c.depositAmount.toString()),
       validatorFee: ethers.formatEther(c.validatorFee.toString()),
@@ -194,8 +194,10 @@ const RentalPlatform = () => {
     // Validate input
     validateContractInput(newContract);
 
-    const depositInWei = ethers.parseEther(newContract.depositAmount);
-    const feeInWei = ethers.parseEther(newContract.validatorFee);
+    // Wrong
+    // const depositInWei = ethers.parseEther(newContract.depositAmount);
+    // const feeInWei = ethers.parseEther(newContract.validatorFee);
+
     // const durationInSeconds = Number(newContract.duration) * 24 * 60 * 60; // Convert days to seconds
     const durationInSeconds = Number(newContract.duration); // Convert days to seconds
 
@@ -206,8 +208,8 @@ const RentalPlatform = () => {
     const gasEstimate = await contract.createContract.estimateGas(
       newContract.renter,
       newContract.validator,
-      depositInWei,
-      feeInWei,
+      newContract.depositAmount,
+      newContract.validatorFee,
       durationInSeconds
     );
 
@@ -217,8 +219,8 @@ const RentalPlatform = () => {
     console.log("Creating contract with parameters:", {
       renter: newContract.renter,
       validator: newContract.validator,
-      depositAmount: depositInWei.toString(),
-      validatorFee: feeInWei.toString(),
+      depositAmount: newContract.depositAmount,
+      validatorFee: newContract.validatorFee,
       duration: durationInSeconds,
       gasLimit
     });
@@ -226,8 +228,8 @@ const RentalPlatform = () => {
     const tx = await contract.createContract(
       newContract.renter,
       newContract.validator,
-      depositInWei,
-      feeInWei,
+      newContract.depositAmount,
+      newContract.validatorFee,
       durationInSeconds,
       { gasLimit }
     );
@@ -301,92 +303,81 @@ const RentalPlatform = () => {
     }
   };
 
-  const signContract = async (contractId, depositAmount) => {
-    try {
-      setLoadingContractId(contractId);
-      setError(null);
+const signContract = async (contractId, depositAmount) => {
+  try {
+    setLoadingContractId(contractId);
+    setError(null);
 
-      // Enhanced input validation
-      if (contractId === undefined || contractId === null) {
-        throw new Error("Contract ID is required");
-      }
-
-      if (!depositAmount || depositAmount <= 0) {
-        throw new Error("Invalid deposit amount");
-      }
-
-      console.log("Signing contract with parameters:", {
-        contractId,
-        depositAmount,
-      });
-
-      // Get contract details first to verify the required deposit amount
-      const contractDetails = await contract.getContractDetails(contractId);
-      console.log(contractDetails);
-      // const requiredDeposit = contractDetails.depositAmount;
-      //
-      // // Verify the deposit amount matches exactly
-      // if (ethers.parseEther(depositAmount.toString()) !== requiredDeposit.toString()) {
-      //   throw new Error(`Incorrect deposit amount ${ethers.parseEther(depositAmount.toString())}. Required: ${requiredDeposit.toString()} ETH`);
-      // }
-
-      // Convert deposit amount to Wei
-      const depositInWei = ethers.parseEther(depositAmount.toString());
-
-      // Perform all verifications
-      console.log("Starting contract verification process...");
-
-      // 1. Verify network connection
-      await verifyNetwork(provider);
-      console.log("Network verification successful");
-
-      // 2. Verify user balance
-      await verifyBalance(provider, currentAccount, depositInWei);
-      console.log("Balance verification successful");
-
-      // 3. Verify contract state
-      await verifyContractBeforeSigning(contractId);
-      console.log("Contract state verification successful");
-
-      // Send transaction with the exact deposit amount
-      const tx = await contract.signContract(contractId, {
-        value: depositInWei,
-        gasLimit: MINIMUM_GAS_LIMIT,
-      });
-
-      const receipt = await tx.wait();
-
-      if (receipt.status === 0) {
-        throw new Error("Transaction failed");
-      }
-
-      await fetchContracts();
-      return receipt;
-    } catch (error) {
-      console.error("Error in signContract:", error);
-      let errorMessage;
-
-      // Enhanced error handling
-      if (error.reason) {
-        errorMessage = `Contract signing failed: ${error.reason}`;
-      } else if (error.data?.message) {
-        errorMessage = `Contract signing failed: ${error.data.message}`;
-      } else if (error.message.includes("user rejected")) {
-        errorMessage = "Transaction was rejected by user";
-      } else if (error.message.includes("insufficient funds")) {
-        errorMessage = "Insufficient funds to complete transaction";
-      } else if (error.message.includes("execution reverted")) {
-        errorMessage = "Transaction reverted - contract requirements not met";
-      } else {
-        errorMessage = error.message || "Failed to sign contract";
-      }
-
-      setError(errorMessage);
-      throw error;
-    } finally {
-      setLoadingContractId(null);
+    // Enhanced input validation
+    if (contractId === undefined || contractId === null) {
+      throw new Error("Contract ID is required");
     }
-  };
+
+    if (!depositAmount || depositAmount <= 0) {
+      throw new Error("Invalid deposit amount");
+    }
+
+    console.log("Original deposit amount:", depositAmount);
+
+    // Convert the decimal Wei amount to a string and remove any decimals
+    const depositAmountWei = ethers.parseEther(depositAmount);
+    console.log("Formatted Wei amount:", depositAmountWei);
+
+    // Perform all verifications
+    console.log("Starting contract verification process...");
+
+    // 1. Verify network connection
+    await verifyNetwork(provider);
+    console.log("Network verification successful");
+
+    // 2. Verify user balance
+    await verifyBalance(provider, currentAccount, depositAmountWei);
+    console.log("Balance verification successful");
+
+    // 3. Verify contract state
+    await verifyContractBeforeSigning(contractId);
+    console.log("Contract state verification successful");
+
+    // Send transaction with the exact deposit amount
+    const tx = await contract.signContract(contractId, {
+      value: depositAmountWei,
+      gasLimit: MINIMUM_GAS_LIMIT,
+    });
+
+    const receipt = await tx.wait();
+
+    if (receipt.status === 0) {
+      throw new Error("Transaction failed");
+    }
+
+    await fetchContracts();
+    return receipt;
+  } catch (error) {
+    console.error("Error in signContract:", error);
+    let errorMessage;
+
+    // Enhanced error handling
+    if (error.reason) {
+      errorMessage = `Contract signing failed: ${error.reason}`;
+    } else if (error.data?.message) {
+      errorMessage = `Contract signing failed: ${error.data.message}`;
+    } else if (error.message.includes("user rejected")) {
+      errorMessage = "Transaction was rejected by user";
+    } else if (error.message.includes("insufficient funds")) {
+      errorMessage = "Insufficient funds to complete transaction";
+    } else if (error.message.includes("execution reverted")) {
+      errorMessage = "Transaction reverted - contract requirements not met";
+    } else {
+      errorMessage = error.message || "Failed to sign contract";
+    }
+
+    setError(errorMessage);
+    throw error;
+  } finally {
+    setLoadingContractId(null);
+  }
+};
+
 
   
 // Event Listeners for network and account changes
@@ -484,9 +475,19 @@ const verifyBalance = async (provider, account, requiredAmount) => {
       setLoadingContractId(contractId);
       setError(null);
 
+    console.log("Original validator fee:", validatorFee);
+
+    // Convert the decimal Wei amount to a string and remove any decimals
+    const validatorFeeWei = ethers.parseEther(validatorFee);
+      console.log("Formatted Wei amount:", validatorFeeWei);
+      
+    const _signer = await provider.getSigner();
+    const signerAddress = await _signer.address;
+    console.log(signerAddress); // Check if this is the expected address
+
       const tx = await contract.requestValidator(contractId, {
-        value: ethers.parseEther(validatorFee.toString()),
-        gasLimit: 300000,
+        value: validatorFeeWei,
+        gasLimit: MINIMUM_GAS_LIMIT,
       });
 
       await tx.wait();
@@ -529,9 +530,9 @@ const verifyBalance = async (provider, account, requiredAmount) => {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <p className="text-sm font-medium">Contract ID: {contract.id}</p>
-            <p className="text-sm">PG Owner: {contract.pgOwner}</p>
-            <p className="text-sm">Renter: {contract.renter}</p>
-            <p className="text-sm">Validator: {contract.validator}</p>
+            <p className="text-sm">PG Owner: {contract[0]}</p>
+            <p className="text-sm">Renter: {contract[1]}</p>
+            <p className="text-sm">Validator: {contract[9]}</p>
           </div>
           <div>
             <p className="text-sm">Deposit: {contract.depositAmount} ETH</p>
@@ -539,7 +540,10 @@ const verifyBalance = async (provider, account, requiredAmount) => {
               Validator Fee: {contract.validatorFee} ETH
             </p>
             <p className="text-sm">
-              End Date: {new Date(contract.endDate * 1000).toLocaleString()}
+              Start Date: {contract[4]}
+            </p>
+            <p className="text-sm">
+              End Date: {contract[5]}
             </p>
             {/* {timeRemaining > 0 && (
               <p className="text-sm text-green-600">
