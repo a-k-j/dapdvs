@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { ClockIcon, WalletIcon, CheckCircleIcon, HomeIcon } from "lucide-react";
 import DAPDVS_ABI from "./ContractABI.json";
+import logo from './Logo.png';
 const ethers = require("ethers");
-const DAPDVS_ADDRESS = "0x7A095AE9f9BEc959970B3B45dC8543564208961b";
+const DAPDVS_ADDRESS = "0x57A02fCaF78F8b7aB6559Dec2bb829007db19eC5";
 const EXPECTED_CHAIN_ID = 11155111n; // Sepolia testnet - adjust as needed
-const MINIMUM_GAS_LIMIT = 3000000n;
+const MINIMUM_GAS_LIMIT = 300000n;
 
 const RentalPlatform = () => {
   const [currentAccount, setCurrentAccount] = useState(null);
@@ -18,6 +19,7 @@ const RentalPlatform = () => {
   const [loadingContractId, setLoadingContractId] = useState(null);
   const [damageAmount, setDamageAmount] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
+  const [loadingAction, setLoadingAction] = useState(null);
 
   // Contract states remain the same...
   const [pendingContracts, setPendingContracts] = useState([]);
@@ -107,6 +109,42 @@ const RentalPlatform = () => {
   useEffect(() => {
     checkIfWalletIsConnected();
   }, []);
+
+  useEffect(() => {
+  const checkForExpiredContracts = async () => {
+    if (!contract || role !== "pgOwner") return; // Only check for pgOwners
+
+    const currentTime = Math.floor(Date.now() / 1000);
+
+    // Loop over active contracts to find any expired contracts
+    for (const rentalContract of activeContracts) {
+      const contractId = rentalContract.id;
+      const endDate = rentalContract.endDate;
+
+      if (endDate < currentTime && !rentalContract.validatorRequested) {
+        try {
+          console.log(`Attempting to auto-complete contract ID: ${contractId}`);
+          const tx = await contract.autoCompleteContract(contractId, {
+            gasLimit: MINIMUM_GAS_LIMIT,
+          });
+          await tx.wait();
+
+          console.log(`Contract ${contractId} auto-completed.`);
+          await fetchContracts(); // Refresh contract list after update
+        } catch (error) {
+          console.error(`Failed to auto-complete contract ID: ${contractId}`, error);
+        }
+      }
+    }
+  };
+
+  // Set an interval to check every 10 minutes
+  const intervalId = setInterval(checkForExpiredContracts, 60000);
+
+  // Cleanup interval on component unmount
+  return () => clearInterval(intervalId);
+}, [contract, activeContracts, role]);
+
 
   // Initialize contract connection
   useEffect(() => {
@@ -306,6 +344,7 @@ const RentalPlatform = () => {
 const signContract = async (contractId, depositAmount) => {
   try {
     setLoadingContractId(contractId);
+    setLoadingAction('signing');
     setError(null);
 
     // Enhanced input validation
@@ -375,6 +414,7 @@ const signContract = async (contractId, depositAmount) => {
     throw error;
   } finally {
     setLoadingContractId(null);
+    setLoadingAction(null);
   }
 };
 
@@ -433,10 +473,10 @@ const verifyContractBeforeSigning = async (contractId) => {
       throw new Error("Contract does not exist");
     }
 
-    // // Check if contract is in pending state (adjust based on your contract's state enum)
-    // if (contractData.state !== 0) { // Assuming 0 is PENDING state
-    //   throw new Error("Contract is not in pending state");
-    // }
+    // Check if contract is in pending state (adjust based on your contract's state enum)
+    if (Number(contractData[7]) !== 0) { // Assuming 0 is PENDING state
+      throw new Error("Contract is not in pending state");
+    }
 
     // Check if contract is expired
     // const currentTime = Math.floor(Date.now() / 1000);
@@ -564,11 +604,21 @@ const verifyBalance = async (provider, account, requiredAmount) => {
           {role === "renter" && type === "pending" && (
             <button
               onClick={() => signContract(Number(contract[11]), contract.depositAmount)}
-              disabled={isLoading}
+              disabled={loadingContractId === Number(contract[11])}
               className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-green-400"
             >
-              {isLoading ? "Signing..." : "Sign & Pay Deposit"}
+              {loadingAction === 'signing' && loadingContractId === Number(contract[11]) ? "Signing..." : "Sign & Pay Deposit"}
             </button>
+          )}
+
+          {(role === "pgOwner" || role === "renter") && type === "pending" && contract[7] === 0n && (
+              <button
+                onClick={() => rejectContract(Number(contract[11]))}
+                disabled={loadingContractId === Number(contract[11])}
+                className="w-full mt-2 py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-red-400"
+              >
+                {loadingAction === 'rejecting' && loadingContractId === Number(contract[11]) ? "Rejecting..." : "Reject Contract"}
+              </button>
           )}
 
           {role === "pgOwner" && type === "active" && !contract[8] && (
@@ -608,6 +658,27 @@ const verifyBalance = async (provider, account, requiredAmount) => {
     setIsInitialized(false);
   };
 
+  const rejectContract = async (contractId) => {
+  try {
+    setLoadingContractId(contractId);
+    setLoadingAction('rejecting');
+    setError(null);
+
+    const tx = await contract.rejectContract(contractId, {
+      gasLimit: MINIMUM_GAS_LIMIT,
+    });
+
+    await tx.wait();
+    await fetchContracts(); // Refresh the contracts list
+  } catch (error) {
+    console.error("Error rejecting contract:", error);
+    setError(error.message);
+  } finally {
+    setLoadingContractId(null);
+    setLoadingAction(null);
+  }
+};
+
   const formatDate = (epochTimestamp) => {
     if (!epochTimestamp) return 'N/A';
     const date = new Date(epochTimestamp * 1000); // Convert seconds to milliseconds
@@ -638,7 +709,12 @@ const verifyBalance = async (provider, account, requiredAmount) => {
       <div className="w-full">
         <div className="bg-white rounded-lg shadow p-6 mb-8">
           <div className="flex items-center justify-between mb-6">
-            <p className="text-sm text-gray-600">Connected: {currentAccount}</p>
+            <p className="text-s text-gray-600">Connected: {currentAccount}</p>
+
+            <header className="App-header flex items-center">
+                <img src={logo} className="App-logo w-20 h-20 mr-10" alt="Logo" />
+            </header>
+
             <button
               onClick={logout}
               className="py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700"
@@ -912,7 +988,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
         </div>
       )}
       {!currentAccount ? renderWalletConnection() : renderDashboard()}
-    </div>
+      </div>
   );
 };
 
