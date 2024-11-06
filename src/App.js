@@ -551,7 +551,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
               <p className="text-sm">
                 End: {formatDate(contract.endDate)}
               </p>
-              {timeRemaining > 0 && (
+              {timeRemaining > 0 && contract[7] !== 3n && (
                 <p className="text-sm font-medium text-blue-600">
                   Time Remaining: {getTimeRemaining(contract.endDate)}
                 </p>
@@ -571,7 +571,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
             </button>
           )}
 
-          {role === "pgOwner" && type === "active" && !contract.validatorRequested && (
+          {role === "pgOwner" && type === "active" && !contract[8] && (
             <button
               onClick={() => requestValidator(Number(contract[11]), contract.validatorFee)}
               disabled={isLoading}
