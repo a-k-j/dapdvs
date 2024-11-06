@@ -1,75 +1,88 @@
-<<<<<<< HEAD
-# dapdvs
-BWD Project
-=======
-# Getting Started with Create React App
+# Project Setup
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Step 1: Extract the zip file
+Extract the zip file to a folder of your choice.
 
-## Available Scripts
+## Step 2: Open the terminal
+Open the terminal and navigate to the extracted folder.
 
-In the project directory, you can run:
+## Step 3: Run the install script
+Run the following command to execute the install script:
 
-### `npm start`
+```bash
+bash install.sh
+```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+This will install the required dependencies for the project.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Step 4: Compile the contract
+Run the following command to compile the contract:
 
-### `npm test`
+```bash
+npx hardhat compile
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Step 5: Run the tests
+Run the following command to execute the tests:
 
-### `npm run build`
+```bash
+npx hardhat test
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Step 6: Deploy the contract (Option 1)
+To deploy the contract from scratch, use the following command:
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+npx hardhat run scripts/deploy.js --network sepolia
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+This will deploy the contract to the Sepolia network. Once the deployment is complete, you will see the deployed contract address in the terminal. Copy this address and paste it in the `src/app.js` file at the top, in the `DAPDVS_ADDRESS` constant.
 
-### `npm run eject`
+## Step 7: Run the application
+After completing the previous steps, run the following command to start the application:
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+```bash
+npm run start
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+This will start the application and you can access it in your web browser.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Step 8: Use the already deployed contract (Option 2)
+If you don't want to deploy the contract from scratch, you can directly run the following command to start the application:
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+```bash
+npm run start
+```
 
-## Learn More
+This will use the already deployed contract and start the application.
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+# Project Overview
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Features
 
-### Code Splitting
+Our project offers the following features:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+### Login through Metamask
 
-### Analyzing the Bundle Size
+![login through metamask](Execution screenshots/login.png)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+### Create New contracts
 
-### Making a Progressive Web App
+![create new contract](Execution screenshots/create contract.png)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+### Fetch contracts
 
-### Advanced Configuration
+![Fetch contracts](Execution screenshots/fetch contracts.png)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+### pgOwner Reject
 
-### Deployment
+![reject contract by pgOwner](Execution screenshots/pgowner reject.png)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+### Renter accept reject
 
-### `npm run build` fails to minify
+![Renter accept reject](Execution screenshots/renter accept reject.png)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
->>>>>>> master
+### Request Validator
+
+![Request Validator](Execution screenshots/request validator.png)
+

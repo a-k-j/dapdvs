@@ -785,7 +785,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
   </div>
   <div>
     <label className="block text-sm font-medium mb-1">
-      Deposit Amount (ETH)
+      Deposit Amount (Wei)
     </label>
     <input
       type="number"
@@ -801,7 +801,7 @@ const verifyBalance = async (provider, account, requiredAmount) => {
   </div>
   <div>
     <label className="block text-sm font-medium mb-1">
-      Validator Fee (ETH)
+      Validator Fee (Wei)
     </label>
     <input
       type="number"
@@ -953,6 +953,9 @@ const verifyBalance = async (provider, account, requiredAmount) => {
 
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+         <header className="App-header flex items-center">
+                <img src={logo} className="App-logo w-20 h-20 mr-10" alt="Logo" />
+        </header>
         <div className="mb-4 text-xl font-semibold">
           Welcome to Rental Platform
         </div>
